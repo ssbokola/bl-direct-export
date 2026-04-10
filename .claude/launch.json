@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "bl-direct-export",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5174"],
+      "port": 5174,
+      "cwd": "C:\\Users\\ssbok\\Dropbox\\claude work\\projets\\KEMET SERVICES\\direction\\Business-Operations\\kemet-bizops\\bl france\\bl-direct-export"
+    }
+  ]
+}
