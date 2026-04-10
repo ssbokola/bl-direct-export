@@ -44,23 +44,48 @@ export async function parseBLPdf(file) {
   const blNumber = extractBlNumber(fullText) || extractFieldByXY(allItems, /livraison/i)
   const headerCosts = parseHeaderCosts(fullText)
 
-  // Find all CIP/EAN anchor items (CIP13 3400xxx, EAN13, EAN12, or any 10-13 digit barcode)
-  // Exclude header numbers (facture, commande, client) by checking nearby context
+  // Find all CIP/EAN anchor items (CIP13 3400xxx, EAN13, EAN12, or any 7-13 digit barcode)
+  // Strategy: first look for single items, then try merging adjacent numeric items
   const headerNumbers = new Set([invoiceNumber, orderNumber, blNumber].filter(Boolean))
-  const cipItems = allItems.filter(it => {
-    const clean = it.str.replace(/\s/g, '')
-    if (!/^\d{10,13}$/.test(clean)) return false
-    // Exclude if it matches a known header number
-    if (headerNumbers.has(clean)) return false
-    // Exclude if near a header label (facture, commande, client)
+
+  const isCipCandidate = (clean) => /^\d{7,13}$/.test(clean)
+  const isHeaderLine = (it) => {
     const nearbyLabels = allItems.filter(other =>
       Math.abs(other.y - it.y) <= 3 && other !== it
     )
-    const isHeaderLine = nearbyLabels.some(n =>
-      /facture|commande|client|échéance|colis|poids/i.test(n.str)
+    return nearbyLabels.some(n =>
+      /facture|commande|client|échéance|colis|poids|Total\s+G/i.test(n.str)
     )
-    return !isHeaderLine
+  }
+
+  // Phase 1: single-item CIP codes (10-13 digits)
+  const cipItems = allItems.filter(it => {
+    const clean = it.str.replace(/\s/g, '')
+    if (!/^\d{10,13}$/.test(clean)) return false
+    if (headerNumbers.has(clean)) return false
+    return !isHeaderLine(it)
   })
+
+  // Phase 2: try merging adjacent numeric fragments (e.g. "37002213" + "00633")
+  // This handles PDFs where pdf.js splits a barcode into 2 text items
+  const cipCodes = new Set(cipItems.map(it => it.str.replace(/\s/g, '')))
+  for (let i = 0; i < allItems.length - 1; i++) {
+    const a = allItems[i], b = allItems[i + 1]
+    if (a.page !== b.page) continue
+    if (Math.abs(a.y - b.y) > 2) continue
+    const merged = (a.str + b.str).replace(/\s/g, '')
+    if (isCipCandidate(merged) && merged.length >= 10 && !cipCodes.has(merged)) {
+      if (headerNumbers.has(merged)) continue
+      // Create a synthetic CIP item at position of first fragment
+      if (!isHeaderLine(a)) {
+        cipItems.push({ str: merged, x: a.x, y: a.y, page: a.page, _merged: true })
+        cipCodes.add(merged)
+        console.log(`🔗 Merged CIP fragments: "${a.str}" + "${b.str}" → ${merged}`)
+      }
+    }
+  }
+
+  console.log(`🔍 CIP items found: ${cipItems.length}`, cipItems.map(it => it.str.replace(/\s/g, '')))
 
   // For each CIP, collect items on the same Y line
   const products = []

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 
-const TAUX_EUR_CFA = 676
+const DEFAULT_TAUX = 676
 
 function InfoCard({ label, value, sub, accent }) {
   return (
@@ -14,6 +14,7 @@ function InfoCard({ label, value, sub, accent }) {
 
 export default function Step3Conversion({ data, onUpdate, onNext, onPrev }) {
   const [totalFrais, setTotalFrais] = useState(data.totalFrais || 0)
+  const [tauxEurCfa, setTauxEurCfa] = useState(data.tauxEurCfa || DEFAULT_TAUX)
 
   const totalQty = useMemo(() => {
     return (data.matches || []).reduce((sum, m) => sum + m.blProduct.qtyDelivered, 0)
@@ -30,7 +31,7 @@ export default function Step3Conversion({ data, onUpdate, onNext, onPrev }) {
       const part = totalValeurEur > 0 ? ligneTotalEur / totalValeurEur : 0
       const fraisLigne = totalFrais * part
       const fraisUnit = m.blProduct.qtyDelivered > 0 ? fraisLigne / m.blProduct.qtyDelivered : 0
-      const paCfaUnit = (m.blProduct.priceEur * TAUX_EUR_CFA) + fraisUnit
+      const paCfaUnit = (m.blProduct.priceEur * tauxEurCfa) + fraisUnit
       return {
         ...m,
         paCfaUnit,
@@ -39,11 +40,12 @@ export default function Step3Conversion({ data, onUpdate, onNext, onPrev }) {
         partPct: Math.round(part * 1000) / 10,
       }
     })
-  }, [data.matches, totalFrais, totalValeurEur])
+  }, [data.matches, totalFrais, totalValeurEur, tauxEurCfa])
 
   const handleNext = () => {
     onUpdate({
       totalFrais,
+      tauxEurCfa,
       convertedProducts: products,
     })
     onNext()
@@ -56,39 +58,59 @@ export default function Step3Conversion({ data, onUpdate, onNext, onPrev }) {
         <p className="text-gray-400 mt-2">Calcul du prix d'achat CFA avec repartition proportionnelle des frais</p>
       </div>
 
-      {/* Info cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 stagger-children">
-        <InfoCard label="Taux" value={`${TAUX_EUR_CFA} FCFA`} sub="1 EUR = 676 FCFA" accent />
-        <InfoCard label="Valeur totale" value={`${totalValeurEur.toFixed(2)} EUR`} sub={`${totalQty} unites`} />
-        <InfoCard label="Valeur CFA" value={`${Math.round(totalValeurEur * TAUX_EUR_CFA).toLocaleString('fr-FR')}`} sub="Hors frais" />
-        <InfoCard label="Repartition" value="Proportionnelle" sub="Au prorata du PA" accent />
-      </div>
-
-      {/* Frais input */}
-      <div className="rounded-2xl p-6 border border-gray-100 bg-white shadow-sm">
-        <label className="block text-sm font-semibold text-gray-700 mb-3">
-          Total frais d'importation (FCFA)
-        </label>
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1">
-            <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+      {/* Parametres editables */}
+      <div className="grid md:grid-cols-2 gap-4">
+        {/* Taux de change */}
+        <div className="rounded-2xl p-5 border border-gray-100 bg-white shadow-sm">
+          <label className="block text-sm font-semibold text-gray-700 mb-2">
+            Taux de change EUR &rarr; FCFA
+          </label>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-400 font-medium">1 EUR =</span>
             <input
               type="number"
-              min="0"
-              step="1000"
-              value={totalFrais || ''}
-              onChange={(e) => setTotalFrais(parseFloat(e.target.value) || 0)}
-              placeholder="Ex: 250 000"
-              className="w-full pl-12 pr-4 py-3.5 text-lg font-semibold border border-gray-200 rounded-xl bg-gray-50 focus:bg-white"
+              min="1"
+              step="1"
+              value={tauxEurCfa || ''}
+              onChange={(e) => setTauxEurCfa(parseFloat(e.target.value) || DEFAULT_TAUX)}
+              className="w-28 px-3 py-2.5 text-lg font-bold text-pharma-700 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white text-center"
             />
+            <span className="text-sm text-gray-400 font-medium">FCFA</span>
           </div>
-          <span className="text-sm font-medium text-gray-400 px-2">FCFA</span>
+          <p className="text-xs text-gray-400 mt-2">Defaut: {DEFAULT_TAUX} FCFA (parite fixe)</p>
         </div>
-        <p className="text-xs text-gray-400 mt-2">
-          Transport, dedouanement, transit, etc. Reparti proportionnellement selon le PA de chaque ligne.
-        </p>
+
+        {/* Frais d'importation */}
+        <div className="rounded-2xl p-5 border border-gray-100 bg-white shadow-sm">
+          <label className="block text-sm font-semibold text-gray-700 mb-2">
+            Total frais d'importation
+          </label>
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <input
+                type="number"
+                min="0"
+                step="1000"
+                value={totalFrais || ''}
+                onChange={(e) => setTotalFrais(parseFloat(e.target.value) || 0)}
+                placeholder="Ex: 250 000"
+                className="w-full pl-10 pr-4 py-2.5 text-lg font-semibold border border-gray-200 rounded-xl bg-gray-50 focus:bg-white"
+              />
+            </div>
+            <span className="text-sm font-medium text-gray-400">FCFA</span>
+          </div>
+          <p className="text-xs text-gray-400 mt-2">Transport, dedouanement, transit... Reparti proportionnellement.</p>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-3 gap-3">
+        <InfoCard label="Valeur EUR" value={`${totalValeurEur.toFixed(2)}`} sub={`${totalQty} unites`} />
+        <InfoCard label="Valeur CFA" value={`${Math.round(totalValeurEur * tauxEurCfa).toLocaleString('fr-FR')}`} sub="Hors frais" accent />
+        <InfoCard label="Repartition" value="Proportionnelle" sub="Au prorata du PA" />
       </div>
 
       {/* Table */}
@@ -114,7 +136,7 @@ export default function Step3Conversion({ data, onUpdate, onNext, onPrev }) {
                   </td>
                   <td className="px-3 py-3 text-center tabular-nums">{p.blProduct.qtyDelivered}</td>
                   <td className="px-3 py-3 text-right tabular-nums">{p.blProduct.priceEur.toFixed(2)}</td>
-                  <td className="px-3 py-3 text-right tabular-nums">{Math.round(p.blProduct.priceEur * TAUX_EUR_CFA).toLocaleString('fr-FR')}</td>
+                  <td className="px-3 py-3 text-right tabular-nums">{Math.round(p.blProduct.priceEur * tauxEurCfa).toLocaleString('fr-FR')}</td>
                   <td className="px-3 py-3 text-right">
                     <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-xs tabular-nums">{p.partPct}%</span>
                   </td>

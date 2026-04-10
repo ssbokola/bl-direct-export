@@ -89,12 +89,106 @@ function DropZone({ icon, title, subtitle, accept, loading, file, success, error
   )
 }
 
+function ManualProductForm({ onAdd, onCancel }) {
+  const [form, setForm] = useState({ cip: '', designation: '', qtyOrdered: 1, qtyDelivered: 1, priceEur: 0 })
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (!form.designation.trim() || form.priceEur <= 0) return
+    onAdd({
+      cip: form.cip || `MANUAL-${Date.now()}`,
+      designation: form.designation.trim(),
+      rawDesignation: form.designation.trim(),
+      etat: 'MANUAL',
+      qtyOrdered: parseInt(form.qtyOrdered) || 1,
+      qtyDelivered: parseInt(form.qtyDelivered) || 1,
+      priceEur: parseFloat(form.priceEur) || 0,
+      totalEur: (parseFloat(form.priceEur) || 0) * (parseInt(form.qtyDelivered) || 1),
+      totalCfa: 0,
+    })
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="rounded-xl border border-pharma-200 bg-pharma-50/30 p-4 animate-slide-down">
+      <h4 className="font-semibold text-gray-700 text-sm mb-3 flex items-center gap-2">
+        <svg className="w-4 h-4 text-pharma-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+        </svg>
+        Ajouter un produit manuellement
+      </h4>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">CIP/EAN (optionnel)</label>
+          <input
+            type="text"
+            value={form.cip}
+            onChange={e => setForm(f => ({ ...f, cip: e.target.value }))}
+            placeholder="3400..."
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white"
+          />
+        </div>
+        <div className="col-span-2 md:col-span-1">
+          <label className="block text-xs text-gray-500 mb-1">Designation *</label>
+          <input
+            type="text"
+            required
+            value={form.designation}
+            onChange={e => setForm(f => ({ ...f, designation: e.target.value }))}
+            placeholder="ZINC 15+ B/60 CP"
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Qte livree *</label>
+          <input
+            type="number"
+            min="1"
+            required
+            value={form.qtyDelivered}
+            onChange={e => setForm(f => ({ ...f, qtyDelivered: e.target.value, qtyOrdered: e.target.value }))}
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Prix unit. EUR *</label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            required
+            value={form.priceEur || ''}
+            onChange={e => setForm(f => ({ ...f, priceEur: e.target.value }))}
+            placeholder="6.58"
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white"
+          />
+        </div>
+      </div>
+      <div className="flex items-center gap-2 mt-3">
+        <button
+          type="submit"
+          className="px-4 py-2 rounded-lg text-sm font-medium bg-pharma-600 text-white hover:bg-pharma-700 transition-all"
+        >
+          Ajouter
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition-all"
+        >
+          Annuler
+        </button>
+      </div>
+    </form>
+  )
+}
+
 export default function Step1Import({ data, onUpdate, onNext }) {
   const [pdfFile, setPdfFile] = useState(data.pdfFile || null)
   const [excelFile, setExcelFile] = useState(data.excelFile || null)
   const [pdfLoading, setPdfLoading] = useState(false)
   const [excelLoading, setExcelLoading] = useState(false)
   const [errors, setErrors] = useState({})
+  const [showManualForm, setShowManualForm] = useState(false)
 
   const handlePdf = useCallback(async (file) => {
     if (!file) return
@@ -149,6 +243,17 @@ export default function Step1Import({ data, onUpdate, onNext }) {
     }
     setExcelLoading(false)
   }, [onUpdate])
+
+  const handleAddManual = useCallback((product) => {
+    const updated = [...(data.blProducts || []), product]
+    onUpdate({ blProducts: updated })
+    setShowManualForm(false)
+  }, [data.blProducts, onUpdate])
+
+  const handleRemoveProduct = useCallback((idx) => {
+    const updated = (data.blProducts || []).filter((_, i) => i !== idx)
+    onUpdate({ blProducts: updated })
+  }, [data.blProducts, onUpdate])
 
   const canProceed = data.blProducts?.length > 0 && data.medicielProducts?.length > 0
   const pdfOk = data.blProducts?.length > 0 && !errors.pdf
@@ -230,6 +335,62 @@ export default function Step1Import({ data, onUpdate, onNext }) {
           )}
         </DropZone>
       </div>
+
+      {/* Product list with manual add */}
+      {pdfOk && (
+        <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden animate-fade-in">
+          <div className="px-4 py-3 bg-gray-50/80 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="font-semibold text-gray-700 text-sm">
+              Produits detectes ({data.blProducts.length})
+            </h3>
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowManualForm(!showManualForm) }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-pharma-50 text-pharma-600 hover:bg-pharma-100 transition-all"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              Ajouter un produit
+            </button>
+          </div>
+
+          {showManualForm && (
+            <div className="px-4 py-3 border-b border-gray-100">
+              <ManualProductForm
+                onAdd={handleAddManual}
+                onCancel={() => setShowManualForm(false)}
+              />
+            </div>
+          )}
+
+          <div className="divide-y divide-gray-50 max-h-64 overflow-y-auto">
+            {data.blProducts.map((p, idx) => (
+              <div key={idx} className="flex items-center justify-between px-4 py-2.5 hover:bg-pharma-50/30 transition-colors">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="text-xs font-bold text-gray-300 tabular-nums w-6">{String(idx + 1).padStart(2, '0')}</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{p.designation}</p>
+                    <p className="text-xs text-gray-400">
+                      {p.cip?.startsWith('MANUAL') ? 'Manuel' : `CIP ${p.cip}`} &middot; Qte {p.qtyDelivered} &middot; {p.priceEur.toFixed(2)} EUR
+                    </p>
+                  </div>
+                </div>
+                {p.etat === 'MANUAL' && (
+                  <button
+                    onClick={() => handleRemoveProduct(idx)}
+                    className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all"
+                    title="Supprimer"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Next button */}
       <div className="flex justify-end pt-2">
