@@ -1,6 +1,93 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { parseBLPdf } from '../utils/pdfParser.js'
 import { parseMedicielExcel } from '../utils/excelParser.js'
+
+function DropZone({ icon, title, subtitle, accept, loading, file, success, error, onFile, children }) {
+  const [dragOver, setDragOver] = useState(false)
+  const inputRef = useRef()
+
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setDragOver(false)
+    const f = e.dataTransfer?.files?.[0]
+    if (f) onFile(f)
+  }
+
+  return (
+    <div
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={handleDrop}
+      onClick={() => !loading && inputRef.current?.click()}
+      className={`relative rounded-2xl p-8 cursor-pointer transition-all duration-300 group
+        ${dragOver
+          ? 'border-2 border-pharma-400 bg-pharma-50/60 shadow-lg shadow-pharma-200/40 scale-[1.01]'
+          : success
+            ? 'border-2 border-pharma-300 bg-gradient-to-br from-pharma-50/80 to-white shadow-md'
+            : error
+              ? 'border-2 border-red-300 bg-red-50/50 shadow-md'
+              : 'border-2 border-dashed border-gray-200 bg-white hover:border-pharma-300 hover:shadow-lg hover:shadow-pharma-100/40 hover:scale-[1.005]'
+        }`}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept={accept}
+        className="hidden"
+        onChange={(e) => onFile(e.target.files[0])}
+        disabled={loading}
+      />
+
+      <div className="text-center">
+        {loading ? (
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-12 h-12 rounded-full border-3 border-pharma-200 border-t-pharma-500 animate-spin" />
+            <p className="text-sm text-pharma-600 font-medium animate-pulse-soft">Analyse en cours...</p>
+          </div>
+        ) : (
+          <>
+            <div className={`w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center transition-all duration-300
+              ${success
+                ? 'bg-gradient-to-br from-pharma-400 to-pharma-600 shadow-lg shadow-pharma-400/30'
+                : 'bg-gray-100 group-hover:bg-pharma-100 group-hover:shadow-md'
+              }`}
+            >
+              {success ? (
+                <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <span className="text-3xl">{icon}</span>
+              )}
+            </div>
+            <h3 className="font-semibold text-gray-800 text-lg mb-1">{title}</h3>
+            <p className="text-sm text-gray-400 mb-4">{subtitle}</p>
+
+            {!file && (
+              <div className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-pharma-600 text-white text-sm font-medium shadow-sm shadow-pharma-600/20 group-hover:bg-pharma-700 group-hover:shadow-md transition-all">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Parcourir ou glisser-deposer
+              </div>
+            )}
+
+            {children}
+          </>
+        )}
+      </div>
+
+      {error && (
+        <div className="mt-4 flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200 animate-fade-in">
+          <svg className="w-5 h-5 text-red-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-sm text-red-600">{error}</p>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function Step1Import({ data, onUpdate, onNext }) {
   const [pdfFile, setPdfFile] = useState(data.pdfFile || null)
@@ -12,7 +99,7 @@ export default function Step1Import({ data, onUpdate, onNext }) {
   const handlePdf = useCallback(async (file) => {
     if (!file) return
     if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setErrors(e => ({ ...e, pdf: 'Veuillez sélectionner un fichier PDF.' }))
+      setErrors(e => ({ ...e, pdf: 'Veuillez selectionner un fichier PDF.' }))
       return
     }
     setErrors(e => ({ ...e, pdf: null }))
@@ -22,7 +109,7 @@ export default function Step1Import({ data, onUpdate, onNext }) {
     try {
       const result = await parseBLPdf(file)
       if (!result.products.length) {
-        setErrors(e => ({ ...e, pdf: 'Aucun produit trouvé dans le PDF. Vérifiez le format.' }))
+        setErrors(e => ({ ...e, pdf: 'Aucun produit trouve dans le PDF. Verifiez le format.' }))
         setPdfLoading(false)
         return
       }
@@ -42,7 +129,7 @@ export default function Step1Import({ data, onUpdate, onNext }) {
   const handleExcel = useCallback(async (file) => {
     if (!file) return
     if (!file.name.match(/\.xlsx?$/i)) {
-      setErrors(e => ({ ...e, excel: 'Veuillez sélectionner un fichier Excel (.xlsx).' }))
+      setErrors(e => ({ ...e, excel: 'Veuillez selectionner un fichier Excel (.xlsx).' }))
       return
     }
     setErrors(e => ({ ...e, excel: null }))
@@ -52,7 +139,7 @@ export default function Step1Import({ data, onUpdate, onNext }) {
     try {
       const products = await parseMedicielExcel(file)
       if (!products.length) {
-        setErrors(e => ({ ...e, excel: 'Aucun produit trouvé. Vérifiez que les en-têtes sont à la ligne 8.' }))
+        setErrors(e => ({ ...e, excel: 'Aucun produit trouve. Verifiez que les en-tetes sont a la ligne 8.' }))
         setExcelLoading(false)
         return
       }
@@ -64,98 +151,101 @@ export default function Step1Import({ data, onUpdate, onNext }) {
   }, [onUpdate])
 
   const canProceed = data.blProducts?.length > 0 && data.medicielProducts?.length > 0
+  const pdfOk = data.blProducts?.length > 0 && !errors.pdf
+  const excelOk = data.medicielProducts?.length > 0 && !errors.excel
 
   return (
-    <div className="space-y-6">
-      <div className="text-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">Import des fichiers</h2>
-        <p className="text-gray-500 mt-1">Chargez le bon de livraison Direct Export et la base produits Médiciel</p>
+    <div className="space-y-8">
+      <div className="text-center">
+        <h2 className="text-2xl sm:text-3xl font-bold text-gray-800">Import des fichiers</h2>
+        <p className="text-gray-400 mt-2 max-w-lg mx-auto">
+          Chargez le bon de livraison Direct Export et la base produits Mediciel
+        </p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        {/* PDF Upload */}
-        <div className="bg-white rounded-xl border-2 border-dashed border-gray-300 p-6 hover:border-pharma-400 transition-colors">
-          <div className="text-center">
-            <div className="text-4xl mb-3">📄</div>
-            <h3 className="font-semibold text-gray-700 mb-1">Bon de Livraison</h3>
-            <p className="text-sm text-gray-500 mb-4">PDF Direct Export</p>
-
-            <label className="inline-flex items-center gap-2 px-4 py-2 bg-pharma-600 text-white rounded-lg cursor-pointer hover:bg-pharma-700 transition-colors">
-              <span>{pdfLoading ? 'Analyse...' : 'Choisir le PDF'}</span>
-              <input
-                type="file"
-                accept=".pdf"
-                className="hidden"
-                onChange={(e) => handlePdf(e.target.files[0])}
-                disabled={pdfLoading}
-              />
-            </label>
-
-            {pdfFile && !errors.pdf && (
-              <p className="text-sm text-green-600 mt-3">
-                ✅ {pdfFile.name}
-              </p>
-            )}
-            {data.blProducts?.length > 0 && (
-              <div className="mt-3 text-sm text-gray-600 space-y-1">
-                <p><strong>{data.blProducts.length}</strong> produits extraits</p>
-                {data.blNumber && <p>BL : <strong>{data.blNumber}</strong></p>}
-                {data.invoiceNumber && <p>Facture : <strong>{data.invoiceNumber}</strong></p>}
-                {data.orderNumber && <p>Commande : <strong>{data.orderNumber}</strong></p>}
+      <div className="grid md:grid-cols-2 gap-6 stagger-children">
+        <DropZone
+          icon="📄"
+          title="Bon de Livraison"
+          subtitle="PDF Direct Export"
+          accept=".pdf"
+          loading={pdfLoading}
+          file={pdfFile}
+          success={pdfOk}
+          error={errors.pdf}
+          onFile={handlePdf}
+        >
+          {pdfOk && (
+            <div className="mt-4 space-y-2 animate-fade-in">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-pharma-100 text-pharma-700 text-sm font-medium">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                {pdfFile?.name}
               </div>
-            )}
-            {errors.pdf && (
-              <p className="text-sm text-red-600 mt-3">❌ {errors.pdf}</p>
-            )}
-          </div>
-        </div>
+              <div className="flex flex-wrap justify-center gap-2 text-xs">
+                <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-600">
+                  <strong>{data.blProducts.length}</strong> produits
+                </span>
+                {data.invoiceNumber && (
+                  <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-600">
+                    Facture <strong>{data.invoiceNumber}</strong>
+                  </span>
+                )}
+                {data.orderNumber && (
+                  <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-600">
+                    Cde <strong>{data.orderNumber}</strong>
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </DropZone>
 
-        {/* Excel Upload */}
-        <div className="bg-white rounded-xl border-2 border-dashed border-gray-300 p-6 hover:border-pharma-400 transition-colors">
-          <div className="text-center">
-            <div className="text-4xl mb-3">📊</div>
-            <h3 className="font-semibold text-gray-700 mb-1">Base Produits Médiciel</h3>
-            <p className="text-sm text-gray-500 mb-4">Fichier Excel (.xlsx)</p>
-
-            <label className="inline-flex items-center gap-2 px-4 py-2 bg-pharma-600 text-white rounded-lg cursor-pointer hover:bg-pharma-700 transition-colors">
-              <span>{excelLoading ? 'Analyse...' : 'Choisir le fichier Excel'}</span>
-              <input
-                type="file"
-                accept=".xlsx,.xls"
-                className="hidden"
-                onChange={(e) => handleExcel(e.target.files[0])}
-                disabled={excelLoading}
-              />
-            </label>
-
-            {excelFile && !errors.excel && (
-              <p className="text-sm text-green-600 mt-3">
-                ✅ {excelFile.name}
-              </p>
-            )}
-            {data.medicielProducts?.length > 0 && (
-              <p className="text-sm text-gray-600 mt-3">
-                <strong>{data.medicielProducts.length}</strong> produits dans la base
-              </p>
-            )}
-            {errors.excel && (
-              <p className="text-sm text-red-600 mt-3">❌ {errors.excel}</p>
-            )}
-          </div>
-        </div>
+        <DropZone
+          icon="📊"
+          title="Base Produits Mediciel"
+          subtitle="Fichier Excel (.xlsx)"
+          accept=".xlsx,.xls"
+          loading={excelLoading}
+          file={excelFile}
+          success={excelOk}
+          error={errors.excel}
+          onFile={handleExcel}
+        >
+          {excelOk && (
+            <div className="mt-4 space-y-2 animate-fade-in">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-pharma-100 text-pharma-700 text-sm font-medium">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                {excelFile?.name}
+              </div>
+              <div className="flex justify-center">
+                <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-600 text-xs">
+                  <strong>{data.medicielProducts.length}</strong> produits dans la base
+                </span>
+              </div>
+            </div>
+          )}
+        </DropZone>
       </div>
 
-      <div className="flex justify-end pt-4">
+      {/* Next button */}
+      <div className="flex justify-end pt-2">
         <button
           onClick={onNext}
           disabled={!canProceed}
-          className={`px-6 py-2.5 rounded-lg font-medium transition-all
+          className={`group flex items-center gap-2 px-7 py-3 rounded-xl font-semibold text-sm transition-all duration-300
             ${canProceed
-              ? 'bg-pharma-600 text-white hover:bg-pharma-700 shadow-sm'
-              : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              ? 'bg-gradient-to-r from-pharma-600 to-pharma-700 text-white shadow-lg shadow-pharma-600/25 hover:shadow-xl hover:shadow-pharma-600/30 hover:scale-[1.02] active:scale-[0.98]'
+              : 'bg-gray-100 text-gray-300 cursor-not-allowed'
             }`}
         >
-          Suivant →
+          Suivant
+          <svg className="w-4 h-4 transition-transform group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+          </svg>
         </button>
       </div>
     </div>

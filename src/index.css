@@ -1,19 +1,100 @@
 @import "tailwindcss";
 
 @theme {
-  --color-pharma-50: #eff6ff;
-  --color-pharma-100: #dbeafe;
-  --color-pharma-200: #bfdbfe;
-  --color-pharma-300: #93c5fd;
-  --color-pharma-400: #60a5fa;
-  --color-pharma-500: #3b82f6;
-  --color-pharma-600: #2563eb;
-  --color-pharma-700: #1d4ed8;
-  --color-pharma-800: #1e40af;
-  --color-pharma-900: #1e3a8a;
+  /* Kemet green palette based on #26883d */
+  --color-pharma-50: #f0fdf4;
+  --color-pharma-100: #dcfce7;
+  --color-pharma-200: #bbf7d0;
+  --color-pharma-300: #6ee7a0;
+  --color-pharma-400: #34d36c;
+  --color-pharma-500: #26883d;
+  --color-pharma-600: #1f7033;
+  --color-pharma-700: #1a5c2b;
+  --color-pharma-800: #174a24;
+  --color-pharma-900: #133d1e;
+
+  --color-accent-50: #eff6ff;
+  --color-accent-100: #dbeafe;
+  --color-accent-200: #bfdbfe;
+  --color-accent-300: #93c5fd;
+  --color-accent-400: #60a5fa;
+  --color-accent-500: #3b82f6;
+  --color-accent-600: #2563eb;
 }
 
 body {
-  @apply bg-gray-50 text-gray-900 antialiased;
+  @apply bg-gradient-to-br from-gray-50 to-pharma-50/20 text-gray-900 antialiased;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+}
+
+/* Smooth transitions */
+button, a, input, select, textarea {
+  @apply transition-all duration-150;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.4s ease-out both;
+}
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out both;
+}
+.animate-slide-down {
+  animation: slideDown 0.25s ease-out both;
+}
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+/* Staggered children */
+.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 80ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 160ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 240ms; }
+
+/* Glassmorphism */
+.glass-card {
+  @apply bg-white/80 backdrop-blur-sm border border-white/60 shadow-lg shadow-gray-200/50;
+}
+
+/* Focus ring */
+input:focus, select:focus, textarea:focus {
+  @apply outline-none ring-2 ring-pharma-400/40 border-pharma-400;
 }
