@@ -44,8 +44,23 @@ export async function parseBLPdf(file) {
   const blNumber = extractBlNumber(fullText) || extractFieldByXY(allItems, /livraison/i)
   const headerCosts = parseHeaderCosts(fullText)
 
-  // Find all CIP anchor items
-  const cipItems = allItems.filter(it => /^3400\d{8,10}$/.test(it.str.replace(/\s/g, '')))
+  // Find all CIP/EAN anchor items (CIP13 3400xxx, EAN13, EAN12, or any 10-13 digit barcode)
+  // Exclude header numbers (facture, commande, client) by checking nearby context
+  const headerNumbers = new Set([invoiceNumber, orderNumber, blNumber].filter(Boolean))
+  const cipItems = allItems.filter(it => {
+    const clean = it.str.replace(/\s/g, '')
+    if (!/^\d{10,13}$/.test(clean)) return false
+    // Exclude if it matches a known header number
+    if (headerNumbers.has(clean)) return false
+    // Exclude if near a header label (facture, commande, client)
+    const nearbyLabels = allItems.filter(other =>
+      Math.abs(other.y - it.y) <= 3 && other !== it
+    )
+    const isHeaderLine = nearbyLabels.some(n =>
+      /facture|commande|client|échéance|colis|poids/i.test(n.str)
+    )
+    return !isHeaderLine
+  })
 
   // For each CIP, collect items on the same Y line
   const products = []
@@ -230,7 +245,7 @@ function parseProductLine(cipCode, text) {
 
   // Detect status keywords
   let status = ''
-  const statusKeywords = ['MLABO', 'NSFPL', 'Quota', 'voir gen']
+  const statusKeywords = ['RELIQ', 'MLABO', 'NSFPL', 'Quota', 'voir gen']
   for (const kw of statusKeywords) {
     const re = new RegExp(`\\b${kw.replace('.', '\\.')}\\b`, 'i')
     if (re.test(cleaned)) {
@@ -239,7 +254,7 @@ function parseProductLine(cipCode, text) {
     }
   }
 
-  cleaned = cleaned.replace(/\b(MLABO|NSFPL|Quota|voir\s+gen\.?)\b/gi, ' ')
+  cleaned = cleaned.replace(/\b(RELIQ|MLABO|NSFPL|Quota|voir\s+gen\.?)\b/gi, ' ')
   cleaned = cleaned.replace(/\b\d{2}R?\d{0,2}J\b/gi, ' ')
   cleaned = cleaned.replace(/\s+/g, ' ').trim()
 
