@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 import { parseBLPdf } from '../utils/pdfParser.js'
+import { parseOfficinePdf } from '../utils/officineParser.js'
 import { parseMedicielExcel } from '../utils/excelParser.js'
 
 function DropZone({ icon, title, subtitle, accept, loading, file, success, error, onFile, children }) {
@@ -183,12 +184,30 @@ function ManualProductForm({ onAdd, onCancel }) {
 }
 
 export default function Step1Import({ data, onUpdate, onNext }) {
+  const [source, setSource] = useState(data.source || '')
   const [pdfFile, setPdfFile] = useState(data.pdfFile || null)
   const [excelFile, setExcelFile] = useState(data.excelFile || null)
   const [pdfLoading, setPdfLoading] = useState(false)
   const [excelLoading, setExcelLoading] = useState(false)
+  const [ocrProgress, setOcrProgress] = useState(null)
   const [errors, setErrors] = useState({})
   const [showManualForm, setShowManualForm] = useState(false)
+
+  const handleSourceChange = useCallback((newSource) => {
+    setSource(newSource)
+    // Reset PDF data when switching source, keep Excel data
+    setPdfFile(null)
+    setErrors(e => ({ ...e, pdf: null }))
+    onUpdate({
+      source: newSource,
+      pdfFile: null,
+      blProducts: [],
+      invoiceNumber: '',
+      orderNumber: '',
+      blNumber: '',
+      supplierName: '',
+    })
+  }, [onUpdate])
 
   const handlePdf = useCallback(async (file) => {
     if (!file) return
@@ -201,24 +220,32 @@ export default function Step1Import({ data, onUpdate, onNext }) {
     setPdfLoading(true)
 
     try {
-      const result = await parseBLPdf(file)
+      setOcrProgress(null)
+      const onProgress = source === 'officine-france' ? (p) => setOcrProgress(p) : undefined
+      const parseFn = source === 'officine-france' ? parseOfficinePdf : parseBLPdf
+      const result = await parseFn(file, onProgress)
       if (!result.products.length) {
         setErrors(e => ({ ...e, pdf: 'Aucun produit trouve dans le PDF. Verifiez le format.' }))
         setPdfLoading(false)
         return
       }
-      onUpdate({
+      const updates = {
         pdfFile: file,
         blProducts: result.products,
         invoiceNumber: result.invoiceNumber,
         orderNumber: result.orderNumber,
         blNumber: result.blNumber,
-      })
+      }
+      if (source === 'officine-france' && result.supplierName) {
+        updates.supplierName = result.supplierName
+      }
+      onUpdate(updates)
     } catch (err) {
       setErrors(e => ({ ...e, pdf: `Erreur de lecture PDF : ${err.message}` }))
     }
     setPdfLoading(false)
-  }, [onUpdate])
+    setOcrProgress(null)
+  }, [onUpdate, source])
 
   const handleExcel = useCallback(async (file) => {
     if (!file) return
@@ -264,15 +291,69 @@ export default function Step1Import({ data, onUpdate, onNext }) {
       <div className="text-center">
         <h2 className="text-2xl sm:text-3xl font-bold text-gray-800">Import des fichiers</h2>
         <p className="text-gray-400 mt-2 max-w-lg mx-auto">
-          Chargez le bon de livraison Direct Export et la base produits Mediciel
+          Selectionnez la source fournisseur puis chargez vos fichiers
         </p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6 stagger-children">
+      {/* Source selector */}
+      <div className="grid sm:grid-cols-2 gap-4 max-w-xl mx-auto">
+        <button
+          type="button"
+          onClick={() => handleSourceChange('direct-export')}
+          className={`relative rounded-2xl p-5 text-left transition-all duration-300 border-2 group
+            ${source === 'direct-export'
+              ? 'border-pharma-500 bg-pharma-50/60 shadow-lg shadow-pharma-200/30 ring-1 ring-pharma-300'
+              : 'border-gray-200 bg-white hover:border-pharma-300 hover:shadow-md'
+            }`}
+        >
+          <div className="flex items-start gap-3">
+            <span className="text-3xl">📦</span>
+            <div>
+              <h3 className={`font-semibold text-base ${source === 'direct-export' ? 'text-pharma-700' : 'text-gray-700'}`}>Direct Export</h3>
+              <p className="text-xs text-gray-400 mt-0.5">PDF natif Direct Export</p>
+            </div>
+          </div>
+          {source === 'direct-export' && (
+            <div className="absolute top-3 right-3">
+              <svg className="w-5 h-5 text-pharma-500" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+            </div>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleSourceChange('officine-france')}
+          className={`relative rounded-2xl p-5 text-left transition-all duration-300 border-2 group
+            ${source === 'officine-france'
+              ? 'border-pharma-500 bg-pharma-50/60 shadow-lg shadow-pharma-200/30 ring-1 ring-pharma-300'
+              : 'border-gray-200 bg-white hover:border-pharma-300 hover:shadow-md'
+            }`}
+        >
+          <div className="flex items-start gap-3">
+            <span className="text-3xl">🏥</span>
+            <div>
+              <h3 className={`font-semibold text-base ${source === 'officine-france' ? 'text-pharma-700' : 'text-gray-700'}`}>Officine France</h3>
+              <p className="text-xs text-gray-400 mt-0.5">BL/Facture d'officine fran&ccedil;aise</p>
+            </div>
+          </div>
+          {source === 'officine-france' && (
+            <div className="absolute top-3 right-3">
+              <svg className="w-5 h-5 text-pharma-500" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+            </div>
+          )}
+        </button>
+      </div>
+
+      {/* DropZones - shown only when source is selected */}
+      {source && <div className="grid md:grid-cols-2 gap-6 stagger-children">
         <DropZone
           icon="📄"
-          title="Bon de Livraison"
-          subtitle="PDF Direct Export"
+          title={source === 'officine-france' ? 'Bon de Livraison / Facture' : 'Bon de Livraison'}
+          subtitle={source === 'officine-france' ? 'PDF officine française' : 'PDF Direct Export'}
           accept=".pdf"
           loading={pdfLoading}
           file={pdfFile}
@@ -307,6 +388,27 @@ export default function Step1Import({ data, onUpdate, onNext }) {
           )}
         </DropZone>
 
+        {/* OCR progress bar */}
+        {ocrProgress && pdfLoading && source === 'officine-france' && (
+          <div className="md:col-span-2 -mt-4">
+            <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4 animate-fade-in">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-6 h-6 rounded-full border-2 border-amber-300 border-t-amber-600 animate-spin shrink-0" />
+                <p className="text-sm font-medium text-amber-700">{ocrProgress.message}</p>
+              </div>
+              <div className="bg-amber-200/50 rounded-full h-2 overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-amber-400 to-amber-600 rounded-full transition-all duration-500"
+                  style={{ width: `${ocrProgress.pct || 0}%` }}
+                />
+              </div>
+              <p className="text-xs text-amber-500 mt-1.5">
+                La reconnaissance optique peut prendre 15-30 secondes par page
+              </p>
+            </div>
+          </div>
+        )}
+
         <DropZone
           icon="📊"
           title="Base Produits Mediciel"
@@ -334,7 +436,7 @@ export default function Step1Import({ data, onUpdate, onNext }) {
             </div>
           )}
         </DropZone>
-      </div>
+      </div>}
 
       {/* Product list with manual add */}
       {pdfOk && (

@@ -17,6 +17,8 @@ export default function App() {
     invoiceNumber: '',
     orderNumber: '',
     blNumber: '',
+    source: '',
+    supplierName: '',
     matches: [],
     totalFrais: 0,
     fraisParUnite: 0,
@@ -61,12 +63,17 @@ export default function App() {
             <div className="flex items-center gap-3">
               <img src="/kemet-logo.svg" alt="Kemet Services" className="h-10 w-auto" />
               <div className="border-l border-gray-200 pl-3">
-                <h1 className="text-lg font-bold text-pharma-700 leading-tight">BL Direct Export</h1>
-                <p className="text-xs text-gray-400 leading-tight">Conversion BL France &rarr; XLSX Mediciel</p>
+                <h1 className="text-lg font-bold text-pharma-700 leading-tight">BL France</h1>
+                <p className="text-xs text-gray-400 leading-tight">Conversion BL Fournisseur &rarr; XLSX M&eacute;diciel</p>
               </div>
             </div>
             <div className="hidden sm:flex items-center gap-2 text-xs text-gray-400">
               <span className="px-2.5 py-1 rounded-full bg-pharma-50 text-pharma-600 font-medium border border-pharma-100">Pharmacie d'officine</span>
+              {data.source && (
+                <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-medium border border-amber-200">
+                  {data.source === 'direct-export' ? 'Direct Export' : (data.supplierName || 'Officine France')}
+                </span>
+              )}
               <span className="text-gray-300">|</span>
               <span>Cote d'Ivoire</span>
             </div>
@@ -88,7 +95,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="py-4 text-center text-xs text-gray-300 border-t border-gray-100">
-        <span className="font-medium text-pharma-500">KEMET Services</span> — Outil de conversion BL Direct Export &middot; v1.0
+        <span className="font-medium text-pharma-500">KEMET Services</span> — Outil de conversion BL France &middot; v1.0
       </footer>
     </div>
   )
