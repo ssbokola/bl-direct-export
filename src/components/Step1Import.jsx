@@ -1,7 +1,8 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useMemo } from 'react'
 import { parseBLPdf } from '../utils/pdfParser.js'
 import { parseOfficinePdf } from '../utils/officineParser.js'
 import { parseMedicielExcel } from '../utils/excelParser.js'
+import { buildSearchIndex, searchMediciel } from '../utils/matching.js'
 
 function DropZone({ icon, title, subtitle, accept, loading, file, success, error, onFile, children }) {
   const [dragOver, setDragOver] = useState(false)
@@ -90,8 +91,32 @@ function DropZone({ icon, title, subtitle, accept, loading, file, success, error
   )
 }
 
-function ManualProductForm({ onAdd, onCancel }) {
+function ManualProductForm({ onAdd, onCancel, medicielProducts }) {
   const [form, setForm] = useState({ cip: '', designation: '', qtyOrdered: 1, qtyDelivered: 1, priceEur: 0 })
+  const [suggestions, setSuggestions] = useState([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+
+  const fuse = useMemo(
+    () => medicielProducts?.length ? buildSearchIndex(medicielProducts) : null,
+    [medicielProducts]
+  )
+
+  const handleDesignationChange = (value) => {
+    setForm(f => ({ ...f, designation: value }))
+    if (fuse && value.length >= 2) {
+      setSuggestions(searchMediciel(fuse, value, 6))
+      setShowSuggestions(true)
+    } else {
+      setSuggestions([])
+      setShowSuggestions(false)
+    }
+  }
+
+  const pickSuggestion = (medicielProduct) => {
+    setForm(f => ({ ...f, designation: medicielProduct.produit }))
+    setSuggestions([])
+    setShowSuggestions(false)
+  }
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -128,16 +153,34 @@ function ManualProductForm({ onAdd, onCancel }) {
             className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white"
           />
         </div>
-        <div className="col-span-2 md:col-span-1">
+        <div className="col-span-2 md:col-span-1 relative">
           <label className="block text-xs text-gray-500 mb-1">Designation *</label>
           <input
             type="text"
             required
+            autoComplete="off"
             value={form.designation}
-            onChange={e => setForm(f => ({ ...f, designation: e.target.value }))}
-            placeholder="ZINC 15+ B/60 CP"
+            onChange={e => handleDesignationChange(e.target.value)}
+            onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+            placeholder="Tapez pour chercher dans Mediciel..."
             className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white"
           />
+          {showSuggestions && suggestions.length > 0 && (
+            <div className="absolute z-10 mt-1 w-full min-w-[240px] border border-gray-100 rounded-xl bg-white shadow-lg overflow-hidden divide-y divide-gray-50 max-h-52 overflow-y-auto">
+              {suggestions.map((s, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onMouseDown={() => pickSuggestion(s.item)}
+                  className="w-full text-left px-3 py-2 hover:bg-pharma-50 transition-colors"
+                >
+                  <p className="text-sm font-medium text-gray-800 truncate">{s.item.produit}</p>
+                  <p className="text-xs text-gray-400">Code {s.item.code}</p>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div>
           <label className="block text-xs text-gray-500 mb-1">Qte livree *</label>
@@ -461,6 +504,7 @@ export default function Step1Import({ data, onUpdate, onNext }) {
               <ManualProductForm
                 onAdd={handleAddManual}
                 onCancel={() => setShowManualForm(false)}
+                medicielProducts={data.medicielProducts}
               />
             </div>
           )}
