@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react'
-
-const DEFAULT_TAUX = 676
+import { PARITE_FIXE, DEFAULT_TAUX, saveTaux } from '../utils/settings.js'
 
 function InfoCard({ label, value, sub, accent }) {
   return (
@@ -14,7 +13,37 @@ function InfoCard({ label, value, sub, accent }) {
 
 export default function Step3Conversion({ data, onUpdate, onNext, onPrev }) {
   const [totalFrais, setTotalFrais] = useState(data.totalFrais || 0)
-  const [tauxEurCfa, setTauxEurCfa] = useState(data.tauxEurCfa || DEFAULT_TAUX)
+
+  // The rate lives in App state so the header control and this input stay in
+  // sync, and is persisted so it survives into the next conversion. Keep a
+  // local draft while typing: clearing the field to retype must not overwrite
+  // the saved rate with a half-entered (or fallback) value.
+  const tauxEurCfa = data.tauxEurCfa || DEFAULT_TAUX
+  const [tauxDraft, setTauxDraft] = useState(String(tauxEurCfa))
+
+  // Follow the header control when it changes the rate from outside this step
+  // (adjusting state during render, rather than in an effect).
+  const [lastTaux, setLastTaux] = useState(tauxEurCfa)
+  if (tauxEurCfa !== lastTaux) {
+    setLastTaux(tauxEurCfa)
+    setTauxDraft(String(tauxEurCfa))
+  }
+
+  const isValidTaux = (v) => Number.isFinite(v) && v >= PARITE_FIXE && v <= 1000
+
+  const handleTauxInput = (raw) => {
+    setTauxDraft(raw)
+    const parsed = parseFloat(raw)
+    if (isValidTaux(parsed)) {
+      saveTaux(parsed)
+      onUpdate({ tauxEurCfa: parsed })
+    }
+  }
+
+  // On blur, discard anything that never became a usable rate.
+  const handleTauxBlur = () => {
+    if (!isValidTaux(parseFloat(tauxDraft))) setTauxDraft(String(tauxEurCfa))
+  }
 
   const totalQty = useMemo(() => {
     return (data.matches || []).reduce((sum, m) => sum + m.blProduct.qtyDelivered, 0)
@@ -69,15 +98,20 @@ export default function Step3Conversion({ data, onUpdate, onNext, onPrev }) {
             <span className="text-sm text-gray-400 font-medium">1 EUR =</span>
             <input
               type="number"
-              min="1"
+              min={PARITE_FIXE}
+              max="1000"
               step="1"
-              value={tauxEurCfa || ''}
-              onChange={(e) => setTauxEurCfa(parseFloat(e.target.value) || DEFAULT_TAUX)}
+              value={tauxDraft}
+              onChange={(e) => handleTauxInput(e.target.value)}
+              onBlur={handleTauxBlur}
               className="w-28 px-3 py-2.5 text-lg font-bold text-pharma-700 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white text-center"
             />
             <span className="text-sm text-gray-400 font-medium">FCFA</span>
           </div>
-          <p className="text-xs text-gray-400 mt-2">Defaut: {DEFAULT_TAUX} FCFA (parite fixe)</p>
+          <p className="text-xs text-gray-400 mt-2">
+            Parite officielle : 1 &euro; = {PARITE_FIXE.toLocaleString('fr-FR')} F, plus vos frais de transfert.
+            Retenu pour les prochaines fois.
+          </p>
         </div>
 
         {/* Frais d'importation */}

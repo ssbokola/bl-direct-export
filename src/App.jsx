@@ -5,6 +5,8 @@ import Step2Matching from './components/Step2Matching.jsx'
 import Step3Conversion from './components/Step3Conversion.jsx'
 import Step4Validation from './components/Step4Validation.jsx'
 import Step5Export from './components/Step5Export.jsx'
+import TauxEuroControl from './components/TauxEuroControl.jsx'
+import { loadTaux, saveTaux } from './utils/settings.js'
 
 export default function App() {
   const [step, setStep] = useState(1)
@@ -22,12 +24,18 @@ export default function App() {
     matches: [],
     totalFrais: 0,
     fraisParUnite: 0,
+    tauxEurCfa: loadTaux(),
     convertedProducts: [],
     validatedPrices: [],
   })
 
   const updateData = useCallback((updates) => {
     setData(prev => ({ ...prev, ...updates }))
+  }, [])
+
+  const handleTauxChange = useCallback((taux) => {
+    saveTaux(taux)
+    setData(prev => ({ ...prev, tauxEurCfa: taux }))
   }, [])
 
   const goNext = useCallback(() => {
@@ -67,15 +75,14 @@ export default function App() {
                 <p className="text-xs text-gray-400 leading-tight">Conversion BL Fournisseur &rarr; XLSX M&eacute;diciel</p>
               </div>
             </div>
-            <div className="hidden sm:flex items-center gap-2 text-xs text-gray-400">
-              <span className="px-2.5 py-1 rounded-full bg-pharma-50 text-pharma-600 font-medium border border-pharma-100">Pharmacie d'officine</span>
+            <div className="flex items-center gap-2 text-xs text-gray-400">
+              <span className="hidden lg:inline px-2.5 py-1 rounded-full bg-pharma-50 text-pharma-600 font-medium border border-pharma-100">Pharmacie d'officine</span>
               {data.source && (
-                <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-medium border border-amber-200">
+                <span className="hidden sm:inline px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-medium border border-amber-200">
                   {data.source === 'direct-export' ? 'Direct Export' : (data.supplierName || 'Officine France')}
                 </span>
               )}
-              <span className="text-gray-300">|</span>
-              <span>Cote d'Ivoire</span>
+              <TauxEuroControl taux={data.tauxEurCfa} onChange={handleTauxChange} />
             </div>
           </div>
         </div>
