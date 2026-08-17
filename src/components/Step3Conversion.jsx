@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { PARITE_FIXE, DEFAULT_TAUX, saveTaux } from '../utils/settings.js'
+import { PARITE_FIXE, DEFAULT_TAUX, TAUX_MAX, isValidTaux, saveTaux } from '../utils/settings.js'
 
 function InfoCard({ label, value, sub, accent }) {
   return (
@@ -28,8 +28,6 @@ export default function Step3Conversion({ data, onUpdate, onNext, onPrev }) {
     setLastTaux(tauxEurCfa)
     setTauxDraft(String(tauxEurCfa))
   }
-
-  const isValidTaux = (v) => Number.isFinite(v) && v >= PARITE_FIXE && v <= 1000
 
   const handleTauxInput = (raw) => {
     setTauxDraft(raw)
@@ -99,7 +97,7 @@ export default function Step3Conversion({ data, onUpdate, onNext, onPrev }) {
             <input
               type="number"
               min={PARITE_FIXE}
-              max="1000"
+              max={TAUX_MAX}
               step="1"
               value={tauxDraft}
               onChange={(e) => handleTauxInput(e.target.value)}

@@ -5,8 +5,11 @@ import Step2Matching from './components/Step2Matching.jsx'
 import Step3Conversion from './components/Step3Conversion.jsx'
 import Step4Validation from './components/Step4Validation.jsx'
 import Step5Export from './components/Step5Export.jsx'
-import TauxEuroControl from './components/TauxEuroControl.jsx'
-import { loadTaux, saveTaux } from './utils/settings.js'
+import ParamControl from './components/ParamControl.jsx'
+import {
+  loadTaux, saveTaux, isValidTaux, PARITE_FIXE, DEFAULT_TAUX, TAUX_MAX,
+  loadCoefficient, saveCoefficient, isValidCoefficient, DEFAULT_COEFFICIENT, COEFF_MIN, COEFF_MAX,
+} from './utils/settings.js'
 
 export default function App() {
   const [step, setStep] = useState(1)
@@ -25,6 +28,7 @@ export default function App() {
     totalFrais: 0,
     fraisParUnite: 0,
     tauxEurCfa: loadTaux(),
+    coefficient: loadCoefficient(),
     convertedProducts: [],
     validatedPrices: [],
   })
@@ -36,6 +40,11 @@ export default function App() {
   const handleTauxChange = useCallback((taux) => {
     saveTaux(taux)
     setData(prev => ({ ...prev, tauxEurCfa: taux }))
+  }, [])
+
+  const handleCoefficientChange = useCallback((coefficient) => {
+    saveCoefficient(coefficient)
+    setData(prev => ({ ...prev, coefficient }))
   }, [])
 
   const goNext = useCallback(() => {
@@ -82,7 +91,42 @@ export default function App() {
                   {data.source === 'direct-export' ? 'Direct Export' : (data.supplierName || 'Officine France')}
                 </span>
               )}
-              <TauxEuroControl taux={data.tauxEurCfa} onChange={handleTauxChange} />
+              <ParamControl
+                icon="€"
+                value={data.tauxEurCfa}
+                onChange={handleTauxChange}
+                unit="F"
+                title="Taux de change"
+                subtitle="Convertit les prix d'achat en FCFA."
+                prefix="1 € ="
+                suffix="FCFA"
+                min={PARITE_FIXE}
+                max={TAUX_MAX}
+                step="1"
+                isValid={isValidTaux}
+                defaultValue={DEFAULT_TAUX}
+                note={<>Parite officielle fixe : <strong className="text-gray-700 tabular-nums">1 € = {PARITE_FIXE.toLocaleString('fr-FR')} F</strong>. Ajoutez-y vos frais de transfert bancaire.</>}
+                errorTooLow={`Ne peut pas etre inferieur a la parite fixe (${PARITE_FIXE.toLocaleString('fr-FR')}).`}
+                errorTooHigh={`Valeur trop elevee (max ${TAUX_MAX.toLocaleString('fr-FR')}).`}
+              />
+              <ParamControl
+                icon="×"
+                value={data.coefficient}
+                onChange={handleCoefficientChange}
+                title="Coefficient de marge"
+                subtitle="Prix de vente = prix d'achat x coefficient."
+                prefix="PA x"
+                suffix="= PV"
+                min={COEFF_MIN}
+                max={COEFF_MAX}
+                step="0.01"
+                isValid={isValidCoefficient}
+                defaultValue={DEFAULT_COEFFICIENT}
+                format={(v) => v.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                note={<>Le prix obtenu est arrondi aux <strong className="text-gray-700">5 FCFA superieurs</strong>. Modifiable ligne par ligne a l'etape 4.</>}
+                errorTooLow={`Doit etre au moins ${COEFF_MIN}.`}
+                errorTooHigh={`Valeur trop elevee (max ${COEFF_MAX}).`}
+              />
             </div>
           </div>
         </div>

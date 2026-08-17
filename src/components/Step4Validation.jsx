@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-
-const DEFAULT_COEFFICIENT = 1.53
+import { DEFAULT_COEFFICIENT, COEFF_MIN, COEFF_MAX, isValidCoefficient, saveCoefficient } from '../utils/settings.js'
 
 function roundUp5(value) {
   return Math.ceil(value / 5) * 5
@@ -17,7 +16,35 @@ function MetricCard({ label, value, sub, color = 'text-gray-800' }) {
 }
 
 export default function Step4Validation({ data, onUpdate, onNext, onPrev }) {
-  const [coefficient, setCoefficient] = useState(data.coefficient || DEFAULT_COEFFICIENT)
+  // The coefficient lives in App state so the header control and this input
+  // stay in sync, and is persisted so it carries into the next conversion.
+  const coefficient = data.coefficient || DEFAULT_COEFFICIENT
+  const [coeffDraft, setCoeffDraft] = useState(String(coefficient))
+
+  // Follow the header control when it changes the coefficient from outside
+  // this step (adjusting state during render, rather than in an effect).
+  const [lastCoeff, setLastCoeff] = useState(coefficient)
+  if (coefficient !== lastCoeff) {
+    setLastCoeff(coefficient)
+    setCoeffDraft(String(coefficient))
+  }
+
+  // Keep a local draft while typing: clearing the field to retype must not
+  // overwrite the saved coefficient with a half-entered value.
+  const setCoefficient = (value) => {
+    if (!isValidCoefficient(value)) return
+    saveCoefficient(value)
+    onUpdate({ coefficient: value })
+  }
+
+  const handleCoeffInput = (raw) => {
+    setCoeffDraft(raw)
+    setCoefficient(parseFloat(raw))
+  }
+
+  const handleCoeffBlur = () => {
+    if (!isValidCoefficient(parseFloat(coeffDraft))) setCoeffDraft(String(coefficient))
+  }
 
   const computePrices = (coeff) => {
     return (data.convertedProducts || []).map(p => {
@@ -106,18 +133,19 @@ export default function Step4Validation({ data, onUpdate, onNext, onPrev }) {
           <div>
             <h3 className="font-semibold text-gray-700">Coefficient multiplicateur</h3>
             <p className="text-xs text-gray-400 mt-0.5">
-              PV = PA x coefficient, arrondi aux 5 FCFA superieurs. Defaut: {DEFAULT_COEFFICIENT}
+              PV = PA x coefficient, arrondi aux 5 FCFA superieurs. Retenu pour les prochaines fois.
             </p>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm text-gray-500">PA x</span>
             <input
               type="number"
-              min="1"
-              max="5"
+              min={COEFF_MIN}
+              max={COEFF_MAX}
               step="0.01"
-              value={coefficient}
-              onChange={(e) => setCoefficient(parseFloat(e.target.value) || DEFAULT_COEFFICIENT)}
+              value={coeffDraft}
+              onChange={(e) => handleCoeffInput(e.target.value)}
+              onBlur={handleCoeffBlur}
               className="w-24 px-3 py-2.5 text-xl font-bold text-pharma-700 border border-pharma-300 rounded-xl bg-white text-center focus:ring-pharma-400/50"
             />
             <span className="text-sm text-gray-500">= PV</span>
