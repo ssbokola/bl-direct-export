@@ -1,18 +1,16 @@
-import { useState, useCallback } from 'react'
-import Stepper from './components/Stepper.jsx'
+import { useState, useCallback, useMemo } from 'react'
+import SideRail from './components/SideRail.jsx'
+import AppHeader from './components/AppHeader.jsx'
+import HomeScreen from './components/HomeScreen.jsx'
 import Step1Import from './components/Step1Import.jsx'
 import Step2Matching from './components/Step2Matching.jsx'
 import Step3Conversion from './components/Step3Conversion.jsx'
 import Step4Validation from './components/Step4Validation.jsx'
 import Step5Export from './components/Step5Export.jsx'
-import ParamControl from './components/ParamControl.jsx'
-import {
-  loadTaux, saveTaux, isValidTaux, PARITE_FIXE, DEFAULT_TAUX, TAUX_MAX,
-  loadCoefficient, saveCoefficient, isValidCoefficient, DEFAULT_COEFFICIENT, COEFF_MIN, COEFF_MAX,
-} from './utils/settings.js'
+import { loadTaux, saveTaux, loadCoefficient, saveCoefficient } from './utils/settings.js'
 
 export default function App() {
-  const [step, setStep] = useState(1)
+  const [screen, setScreen] = useState('home')
   const [maxStep, setMaxStep] = useState(1)
   const [data, setData] = useState({
     pdfFile: null,
@@ -47,107 +45,73 @@ export default function App() {
     setData(prev => ({ ...prev, coefficient }))
   }, [])
 
+  const goToStep = useCallback((step) => {
+    setScreen(step)
+    if (typeof step === 'number') setMaxStep(m => Math.max(m, step))
+  }, [])
+
   const goNext = useCallback(() => {
-    setStep(s => {
-      const next = Math.min(s + 1, 5)
+    setScreen(s => {
+      const next = Math.min((typeof s === 'number' ? s : 0) + 1, 5)
       setMaxStep(m => Math.max(m, next))
       return next
     })
   }, [])
 
   const goPrev = useCallback(() => {
-    setStep(s => Math.max(s - 1, 1))
+    setScreen(s => (typeof s === 'number' && s > 1 ? s - 1 : 'home'))
   }, [])
 
-  const canNavigate = useCallback((targetStep) => {
-    return targetStep <= maxStep
+  const canNavigate = useCallback((target) => {
+    if (target === 'home') return true
+    return target <= maxStep
   }, [maxStep])
 
-  const stepComponents = {
+  // Lines still needing a decision — surfaced as a badge on the rail.
+  const attentionCount = useMemo(
+    () => (data.matches || []).filter(m => !m.match && m.status !== 'excluded').length,
+    [data.matches]
+  )
+
+  const screens = {
+    home: (
+      <HomeScreen
+        data={data}
+        resumeStep={maxStep}
+        onResume={() => goToStep(maxStep)}
+        onStart={() => goToStep(1)}
+      />
+    ),
     1: <Step1Import data={data} onUpdate={updateData} onNext={goNext} />,
     2: <Step2Matching data={data} onUpdate={updateData} onNext={goNext} onPrev={goPrev} />,
     3: <Step3Conversion data={data} onUpdate={updateData} onNext={goNext} onPrev={goPrev} />,
     4: <Step4Validation data={data} onUpdate={updateData} onNext={goNext} onPrev={goPrev} />,
-    5: <Step5Export data={data} onPrev={goPrev} />,
+    5: <Step5Export data={data} onPrev={goPrev} onFinish={() => goToStep('home')} />,
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      {/* Header */}
-      <header className="glass-card sticky top-0 z-50 border-x-0 border-t-0 rounded-none">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <img src="/kemet-logo.svg" alt="Kemet Services" className="h-10 w-auto" />
-              <div className="border-l border-gray-200 pl-3">
-                <h1 className="text-lg font-bold text-pharma-700 leading-tight">BL France</h1>
-                <p className="text-xs text-gray-400 leading-tight">Conversion BL Fournisseur &rarr; XLSX M&eacute;diciel</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-gray-400">
-              <span className="hidden lg:inline px-2.5 py-1 rounded-full bg-pharma-50 text-pharma-600 font-medium border border-pharma-100">Pharmacie d'officine</span>
-              {data.source && (
-                <span className="hidden sm:inline px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-medium border border-amber-200">
-                  {data.source === 'direct-export' ? 'Direct Export' : (data.supplierName || 'Officine France')}
-                </span>
-              )}
-              <ParamControl
-                icon="€"
-                value={data.tauxEurCfa}
-                onChange={handleTauxChange}
-                unit="F"
-                title="Taux de change"
-                subtitle="Convertit les prix d'achat en FCFA."
-                prefix="1 € ="
-                suffix="FCFA"
-                min={PARITE_FIXE}
-                max={TAUX_MAX}
-                step="1"
-                isValid={isValidTaux}
-                defaultValue={DEFAULT_TAUX}
-                note={<>Parite officielle fixe : <strong className="text-gray-700 tabular-nums">1 € = {PARITE_FIXE.toLocaleString('fr-FR')} F</strong>. Ajoutez-y vos frais de transfert bancaire.</>}
-                errorTooLow={`Ne peut pas etre inferieur a la parite fixe (${PARITE_FIXE.toLocaleString('fr-FR')}).`}
-                errorTooHigh={`Valeur trop elevee (max ${TAUX_MAX.toLocaleString('fr-FR')}).`}
-              />
-              <ParamControl
-                icon="×"
-                value={data.coefficient}
-                onChange={handleCoefficientChange}
-                title="Coefficient de marge"
-                subtitle="Prix de vente = prix d'achat x coefficient."
-                prefix="PA x"
-                suffix="= PV"
-                min={COEFF_MIN}
-                max={COEFF_MAX}
-                step="0.01"
-                isValid={isValidCoefficient}
-                defaultValue={DEFAULT_COEFFICIENT}
-                format={(v) => v.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                note={<>Le prix obtenu est arrondi aux <strong className="text-gray-700">5 FCFA superieurs</strong>. Modifiable ligne par ligne a l'etape 4.</>}
-                errorTooLow={`Doit etre au moins ${COEFF_MIN}.`}
-                errorTooHigh={`Valeur trop elevee (max ${COEFF_MAX}).`}
-              />
-            </div>
+    <div className="flex h-screen overflow-hidden bg-app text-ink">
+      <SideRail
+        screen={screen}
+        onNavigate={goToStep}
+        canNavigate={canNavigate}
+        attentionCount={attentionCount}
+      />
+
+      <div className="flex-1 min-w-0 flex flex-col">
+        <AppHeader
+          screen={screen}
+          data={data}
+          onTauxChange={handleTauxChange}
+          onCoefficientChange={handleCoefficientChange}
+        />
+
+        <main className="flex-1 overflow-y-auto px-6 pt-6 pb-10">
+          <div className="max-w-[1180px] mx-auto" key={String(screen)}>
+            {screens[screen]}
           </div>
-        </div>
-      </header>
-
-      {/* Stepper */}
-      <div className="max-w-7xl mx-auto w-full px-4 sm:px-6">
-        <Stepper current={step} canNavigate={canNavigate} onStep={setStep} />
+        </main>
       </div>
-
-      {/* Content */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 pb-8">
-        <div key={step} className="animate-fade-in-up">
-          {stepComponents[step]}
-        </div>
-      </main>
-
-      {/* Footer */}
-      <footer className="py-4 text-center text-xs text-gray-300 border-t border-gray-100">
-        <span className="font-medium text-pharma-500">KEMET Services</span> — Outil de conversion BL France &middot; v1.0
-      </footer>
     </div>
   )
 }

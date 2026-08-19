@@ -1,38 +1,38 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { autoMatch, buildSearchIndex, searchMediciel } from '../utils/matching.js'
+import { loadMatchMemory, rememberMatch } from '../utils/settings.js'
 
-function StatusBadge({ status }) {
-  const config = {
-    auto: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Auto', icon: 'M5 13l4 4L19 7' },
-    manual: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Manuel', icon: 'M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z' },
-    warning: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Verifier', icon: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z' },
-    error: { bg: 'bg-red-100', text: 'text-red-700', label: 'Absent', icon: 'M6 18L18 6M6 6l12 12' },
-  }
-  const c = config[status] || config.error
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${c.bg} ${c.text}`}>
-      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d={c.icon} />
-      </svg>
-      {c.label}
-    </span>
-  )
+const STATUS_META = {
+  auto: { label: 'Auto', fg: 'text-st-auto', bg: 'bg-st-auto-bg', raw: '#1a7a3c' },
+  seen: { label: 'Déjà vu', fg: 'text-st-seen', bg: 'bg-st-seen-bg', raw: '#1d4ed8' },
+  manual: { label: 'Manuel', fg: 'text-st-seen', bg: 'bg-st-seen-bg', raw: '#1d4ed8' },
+  warning: { label: 'À vérifier', fg: 'text-st-warn', bg: 'bg-st-warn-bg', raw: '#a15c07' },
+  error: { label: 'Absent', fg: 'text-st-error', bg: 'bg-st-error-bg', raw: '#b42318' },
+  excluded: { label: 'Exclue', fg: 'text-st-excluded', bg: 'bg-st-excluded-bg', raw: '#6b7280' },
 }
 
-function ScoreBadge({ score }) {
-  const color = score >= 85 ? 'text-emerald-600 bg-emerald-50' : score >= 50 ? 'text-amber-600 bg-amber-50' : 'text-red-600 bg-red-50'
-  return (
-    <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-bold tabular-nums ${color}`}>
-      {score}%
-    </span>
-  )
-}
+const FILTERS = [
+  ['all', 'Tout'],
+  ['auto', 'Auto'],
+  ['seen', 'Déjà vu'],
+  ['warning', 'À vérifier'],
+  ['error', 'Absent'],
+]
+
+const GRID = 'grid grid-cols-[38px_minmax(0,1.35fr)_24px_minmax(0,1.25fr)_58px_108px_104px] items-center gap-3'
+
+const EXCLUSION_MOTIFS = [
+  'Non référencé en officine',
+  'À créer dans Médiciel',
+]
 
 export default function Step2Matching({ data, onUpdate, onNext, onPrev }) {
   const [matches, setMatches] = useState(data.matches || [])
-  const [searchQueries, setSearchQueries] = useState({})
-  const [searchResults, setSearchResults] = useState({})
-  const [activeSearch, setActiveSearch] = useState(null)
+  const [filter, setFilter] = useState('all')
+  const [selected, setSelected] = useState(0)
+  const [expanded, setExpanded] = useState(null)
+  const [queries, setQueries] = useState({})
+  const rowRefs = useRef({})
 
   const fuse = useMemo(
     () => data.medicielProducts ? buildSearchIndex(data.medicielProducts) : null,
@@ -41,210 +41,305 @@ export default function Step2Matching({ data, onUpdate, onNext, onPrev }) {
 
   useEffect(() => {
     if (matches.length === 0 && data.blProducts?.length > 0 && data.medicielProducts?.length > 0) {
-      const result = autoMatch(data.blProducts, data.medicielProducts)
+      const result = autoMatch(data.blProducts, data.medicielProducts, loadMatchMemory())
       setMatches(result)
       onUpdate({ matches: result })
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleSearch = useCallback((idx, query) => {
-    setSearchQueries(q => ({ ...q, [idx]: query }))
-    if (fuse && query.length >= 2) {
-      const results = searchMediciel(fuse, query, 8)
-      setSearchResults(r => ({ ...r, [idx]: results }))
-    } else {
-      setSearchResults(r => ({ ...r, [idx]: [] }))
-    }
-  }, [fuse])
-
-  const selectMatch = useCallback((idx, medicielProduct) => {
-    setMatches(prev => {
-      const updated = [...prev]
-      updated[idx] = {
-        ...updated[idx],
-        match: medicielProduct,
-        score: 100,
-        status: 'manual',
-      }
-      onUpdate({ matches: updated })
-      return updated
-    })
-    setActiveSearch(null)
-    setSearchQueries(q => ({ ...q, [idx]: '' }))
-    setSearchResults(r => ({ ...r, [idx]: [] }))
+  const commit = useCallback((updated) => {
+    setMatches(updated)
+    onUpdate({ matches: updated })
   }, [onUpdate])
 
-  const allMatched = matches.length > 0 && matches.every(m => m.match !== null)
-  const unmatched = matches.filter(m => !m.match).length
+  const visible = useMemo(
+    () => matches
+      .map((m, idx) => ({ ...m, idx }))
+      .filter(m => filter === 'all' || m.status === filter),
+    [matches, filter]
+  )
 
-  const stats = useMemo(() => ({
+  const counts = useMemo(() => ({
+    all: matches.length,
     auto: matches.filter(m => m.status === 'auto').length,
+    seen: matches.filter(m => m.status === 'seen').length,
     warning: matches.filter(m => m.status === 'warning').length,
     error: matches.filter(m => m.status === 'error').length,
-    manual: matches.filter(m => m.status === 'manual').length,
-    total: matches.length,
   }), [matches])
 
+  const resolved = matches.filter(m => m.match || m.status === 'excluded').length
+  const remaining = matches.length - resolved
+  const pct = matches.length > 0 ? Math.round(resolved / matches.length * 100) : 0
+
+  const selectMatch = useCallback((idx, medicielProduct) => {
+    const updated = matches.map((m, i) => i === idx
+      ? { ...m, match: medicielProduct, score: 100, status: 'manual', motif: null }
+      : m)
+    rememberMatch(matches[idx].blProduct.cip, medicielProduct)
+    commit(updated)
+    setExpanded(null)
+    setQueries(q => ({ ...q, [idx]: '' }))
+  }, [matches, commit])
+
+  const excludeLine = useCallback((idx, motif) => {
+    const updated = matches.map((m, i) => i === idx
+      ? { ...m, status: 'excluded', motif, match: null, score: 0 }
+      : m)
+    commit(updated)
+    setExpanded(null)
+  }, [matches, commit])
+
+  const restoreLine = useCallback((idx) => {
+    const blProduct = matches[idx].blProduct
+    const [fresh] = autoMatch([blProduct], data.medicielProducts || [], loadMatchMemory())
+    const updated = matches.map((m, i) => i === idx ? { ...fresh, motif: null } : m)
+    commit(updated)
+  }, [matches, data.medicielProducts, commit])
+
+  // Keyboard navigation over the visible rows.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.target instanceof HTMLInputElement) {
+        if (e.key === 'Escape') setExpanded(null)
+        return
+      }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        const delta = e.key === 'ArrowDown' ? 1 : -1
+        setSelected(s => Math.max(0, Math.min(visible.length - 1, s + delta)))
+        setExpanded(null)
+      } else if (e.key === 'Enter') {
+        const row = visible[selected]
+        if (!row) return
+        e.preventDefault()
+        setExpanded(x => x === row.idx ? null : row.idx)
+      } else if (e.key === 'Escape') {
+        setExpanded(null)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [visible, selected])
+
+  // Keep the highlighted row in view while arrowing through a long BL.
+  useEffect(() => {
+    rowRefs.current[selected]?.scrollIntoView({ block: 'nearest' })
+  }, [selected])
+
+  const searchResults = useCallback((idx) => {
+    const query = queries[idx] || ''
+    if (fuse && query.length >= 2) return searchMediciel(fuse, query, 6)
+    return []
+  }, [queries, fuse])
+
   return (
-    <div className="space-y-6">
-      <div className="text-center">
-        <h2 className="text-2xl sm:text-3xl font-bold text-gray-800">Matching produits</h2>
-        <p className="text-gray-400 mt-2">Associez chaque produit du BL a son equivalent Mediciel</p>
+    <div>
+      {/* Filters + keyboard hints */}
+      <div className="flex items-center justify-between gap-4 mb-3.5 flex-wrap">
+        <div className="flex gap-1 p-1 bg-fill rounded-[11px]">
+          {FILTERS.map(([key, label]) => {
+            const on = filter === key
+            return (
+              <button
+                key={key}
+                onClick={() => { setFilter(key); setSelected(0); setExpanded(null) }}
+                className={`flex items-center gap-[7px] py-[7px] px-[13px] rounded-lg text-[12.5px] font-medium transition-colors
+                  ${on ? 'bg-white text-ink shadow-[0_1px_3px_rgba(20,40,28,.10)]' : 'text-muted-600 hover:text-ink'}`}
+              >
+                <span>{label}</span>
+                <span className={`font-mono text-[11.5px] py-px px-1.5 rounded-full ${on ? 'bg-fill text-muted-700' : 'bg-fill-2 text-muted-500'}`}>
+                  {counts[key]}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+        <div className="flex items-center gap-2.5 text-[11.5px] text-muted-400">
+          <span><kbd className="kbd">↑↓</kbd> naviguer</span>
+          <span><kbd className="kbd">Entrée</kbd> ouvrir</span>
+          <span><kbd className="kbd">Échap</kbd> fermer</span>
+        </div>
       </div>
 
-      {/* Stats bar */}
-      <div className="flex flex-wrap justify-center gap-3">
-        {[
-          { label: 'Auto', count: stats.auto, bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700' },
-          { label: 'Manuel', count: stats.manual, bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700' },
-          { label: 'A verifier', count: stats.warning, bg: 'bg-amber-50 border-amber-200', text: 'text-amber-700' },
-          { label: 'Non trouve', count: stats.error, bg: 'bg-red-50 border-red-200', text: 'text-red-700' },
-        ].map(s => (
-          <div key={s.label} className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-sm ${s.bg}`}>
-            <span className={`text-lg font-bold tabular-nums ${s.text}`}>{s.count}</span>
-            <span className="text-gray-500">{s.label}</span>
+      {/* Progress */}
+      <div className="flex items-center gap-3.5 mb-3.5">
+        <div className="flex-1 h-1.5 rounded bg-fill overflow-hidden">
+          <div className="h-full rounded bg-pharma-500 transition-[width] duration-300" style={{ width: `${pct}%` }} />
+        </div>
+        <div className="font-mono text-[12.5px] text-muted-700 whitespace-nowrap">
+          {resolved} / {matches.length} lignes traitées
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white border border-line rounded-[14px] overflow-hidden">
+        <div className={`${GRID} py-2.5 px-4 bg-subtle border-b border-line text-[10.5px] uppercase tracking-[.06em] text-muted-400 font-semibold`}>
+          <div>#</div>
+          <div>Ligne du BL fournisseur</div>
+          <div />
+          <div>Produit Médiciel</div>
+          <div className="text-right">Score</div>
+          <div>Statut</div>
+          <div />
+        </div>
+
+        {visible.length === 0 && (
+          <div className="py-10 text-center text-[12.5px] text-muted-300">
+            Aucune ligne dans ce filtre.
           </div>
-        ))}
-      </div>
+        )}
 
-      {/* Progress bar */}
-      <div className="bg-gray-100 rounded-full h-2 overflow-hidden">
-        <div
-          className="h-full bg-gradient-to-r from-pharma-400 to-pharma-600 rounded-full transition-all duration-500"
-          style={{ width: `${stats.total > 0 ? ((stats.total - stats.error) / stats.total * 100) : 0}%` }}
-        />
-      </div>
+        {visible.map((m, i) => {
+          const meta = STATUS_META[m.status] || STATUS_META.error
+          const isSelected = i === selected
+          const isExpanded = expanded === m.idx
+          const attention = m.status === 'warning' || m.status === 'error'
+          const excluded = m.status === 'excluded'
+          const results = searchResults(m.idx)
 
-      {/* Matching list */}
-      <div className="space-y-2">
-        {matches.map((m, idx) => (
-          <div
-            key={idx}
-            className={`rounded-xl border p-4 transition-all duration-200
-              ${m.status === 'error' ? 'border-red-200 bg-red-50/50' :
-                m.status === 'warning' ? 'border-amber-200 bg-amber-50/30' :
-                'border-gray-100 bg-white hover:shadow-sm'
-              }`}
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-              {/* Line number */}
-              <div className="flex items-center gap-3 sm:w-8 shrink-0">
-                <span className="text-xs font-bold text-gray-300 tabular-nums">{String(idx + 1).padStart(2, '0')}</span>
-              </div>
-
-              {/* BL Product */}
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-gray-800 truncate">{m.blProduct.designation}</p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  CIP {m.blProduct.cip} &middot; Qte {m.blProduct.qtyDelivered} &middot; {m.blProduct.priceEur.toFixed(2)} EUR
-                </p>
-              </div>
-
-              {/* Arrow */}
-              <div className="hidden sm:flex items-center px-2">
-                <svg className={`w-5 h-5 ${m.match ? 'text-pharma-400' : 'text-gray-200'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                </svg>
-              </div>
-
-              {/* Matched product */}
-              <div className="flex-1 min-w-0">
-                {m.match ? (
-                  <div>
-                    <p className="font-medium text-pharma-700 truncate">{m.match.produit}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">Code {m.match.code}</p>
-                  </div>
-                ) : (
-                  <p className="text-sm text-red-400 italic">Aucun match trouve</p>
-                )}
-              </div>
-
-              {/* Score + Status */}
-              <div className="flex items-center gap-2 shrink-0">
-                <ScoreBadge score={m.score} />
-                <StatusBadge status={m.status} />
-              </div>
-
-              {/* Action */}
-              <div className="shrink-0">
-                <button
-                  onClick={() => setActiveSearch(activeSearch === idx ? null : idx)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all
-                    ${activeSearch === idx
-                      ? 'bg-gray-200 text-gray-600'
-                      : 'bg-pharma-50 text-pharma-600 hover:bg-pharma-100'
-                    }`}
-                >
-                  {activeSearch === idx ? 'Fermer' : m.match ? 'Modifier' : 'Rechercher'}
-                </button>
-              </div>
-            </div>
-
-            {/* Search panel */}
-            {activeSearch === idx && (
-              <div className="mt-3 pt-3 border-t border-gray-100 animate-slide-down">
-                <div className="relative">
-                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                  <input
-                    type="text"
-                    placeholder="Tapez le nom du produit..."
-                    autoFocus
-                    value={searchQueries[idx] || ''}
-                    onChange={(e) => handleSearch(idx, e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:bg-white"
-                  />
+          return (
+            <div
+              key={m.idx}
+              ref={el => { rowRefs.current[i] = el }}
+              className="border-b border-line-softer"
+              style={attention ? { boxShadow: `inset 3px 0 0 ${meta.raw}` } : undefined}
+            >
+              <div
+                onClick={() => setSelected(i)}
+                className={`${GRID} px-4 py-[11px] cursor-pointer transition-colors
+                  ${isSelected ? 'bg-pharma-50' : attention ? `${meta.bg}/40` : 'bg-white'}`}
+              >
+                <div className="font-mono text-[11.5px] text-muted-200">
+                  {String(m.idx + 1).padStart(2, '0')}
                 </div>
-                {searchResults[idx]?.length > 0 && (
-                  <div className="mt-2 border border-gray-100 rounded-xl overflow-hidden divide-y divide-gray-50 max-h-52 overflow-y-auto">
-                    {searchResults[idx].map((r, rIdx) => (
-                      <button
-                        key={rIdx}
-                        onClick={() => selectMatch(idx, r.item)}
-                        className="w-full text-left px-4 py-2.5 hover:bg-pharma-50 transition-colors flex items-center justify-between"
-                      >
-                        <div>
-                          <p className="font-medium text-sm text-gray-800">{r.item.produit}</p>
-                          <p className="text-xs text-gray-400">Code {r.item.code}</p>
-                        </div>
-                        <span className="text-xs text-gray-300 tabular-nums">{r.score}%</span>
-                      </button>
-                    ))}
+                <div className="min-w-0">
+                  <div className={`text-[13px] font-medium truncate ${excluded ? 'text-muted-200 line-through' : 'text-ink'}`}>
+                    {m.blProduct.designation}
                   </div>
-                )}
+                  <div className="font-mono text-[11px] text-muted-300 mt-0.5 truncate">
+                    {m.blProduct.qtyDelivered} u · {m.blProduct.priceEur.toFixed(2).replace('.', ',')} € · CIP {m.blProduct.cip}
+                  </div>
+                </div>
+                <div className={`text-center text-[13px] ${m.match ? 'text-pharma-300' : 'text-line-input'}`}>→</div>
+                <div className="min-w-0">
+                  <div className={`text-[13px] truncate ${m.match ? 'text-pharma-700 font-medium' : `${meta.fg} italic`}`}>
+                    {excluded ? (m.motif || 'Ligne exclue') : (m.match?.produit || 'Aucune correspondance')}
+                  </div>
+                  <div className="font-mono text-[11px] text-muted-300 mt-0.5">
+                    {m.match ? `Code ${m.match.code}` : ''}
+                  </div>
+                </div>
+                <div className={`text-right font-mono text-xs font-semibold
+                  ${m.score >= 85 ? 'text-st-auto' : m.score >= 50 ? 'text-st-warn' : 'text-muted-200'}`}>
+                  {m.score ? `${m.score}%` : '—'}
+                </div>
+                <div>
+                  <span className={`inline-block py-[3px] px-2.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${meta.fg} ${meta.bg}`}>
+                    {meta.label}
+                  </span>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSelected(i)
+                      if (excluded) restoreLine(m.idx)
+                      else setExpanded(x => x === m.idx ? null : m.idx)
+                    }}
+                    className="py-1.5 px-3 rounded-[7px] border border-line bg-white text-xs font-medium text-muted-700 hover:border-pharma-500 hover:text-pharma-500 hover:bg-pharma-50 transition-colors"
+                  >
+                    {excluded ? 'Rétablir' : isExpanded ? 'Fermer' : m.match ? 'Modifier' : 'Rechercher'}
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
-        ))}
+
+              {isExpanded && (
+                <div className="pl-[54px] pr-4 pb-4 animate-row-in">
+                  <div className="grid grid-cols-[minmax(0,1fr)_300px] gap-4 bg-subtle border border-line-soft rounded-[11px] p-3.5">
+                    <div className="min-w-0">
+                      <div className="text-[11px] uppercase tracking-[.05em] text-muted-400 mb-2">
+                        Chercher dans Médiciel
+                      </div>
+                      <input
+                        type="text"
+                        autoFocus
+                        placeholder="Nom du produit…"
+                        value={queries[m.idx] || ''}
+                        onChange={(e) => setQueries(q => ({ ...q, [m.idx]: e.target.value }))}
+                        className="w-full py-2.5 px-3 border border-line-input rounded-[9px] text-[13px] bg-white"
+                      />
+                      <div className="mt-2 border border-line-soft rounded-[9px] bg-white overflow-hidden">
+                        {results.map((r, ri) => (
+                          <button
+                            key={ri}
+                            onClick={() => selectMatch(m.idx, r.item)}
+                            className="flex w-full items-center justify-between gap-3 py-2.5 px-3 border-b border-line-softer last:border-0 text-left hover:bg-pharma-50 transition-colors"
+                          >
+                            <span className="min-w-0">
+                              <span className="block text-[12.5px] font-medium truncate">{r.item.produit}</span>
+                              <span className="block font-mono text-[10.5px] text-muted-300 mt-px">
+                                Code {r.item.code} · stock {r.item.stockTotal}
+                              </span>
+                            </span>
+                            <span className={`font-mono text-[11.5px] font-medium flex-none
+                              ${r.score >= 60 ? 'text-muted-700' : 'text-muted-200'}`}>
+                              {r.score}%
+                            </span>
+                          </button>
+                        ))}
+                        {results.length === 0 && (
+                          <div className="py-4 px-3 text-center text-[12.5px] text-muted-300">
+                            {(queries[m.idx] || '').length >= 2
+                              ? 'Aucune référence proche.'
+                              : `Tapez pour chercher dans les ${(data.medicielProducts || []).length.toLocaleString('fr-FR')} produits.`}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[.05em] text-muted-400 mb-2">
+                        Ce produit n'existe pas
+                      </div>
+                      <div className="text-xs text-muted-600 leading-relaxed mb-2.5">
+                        Excluez la ligne du BL pour continuer. Elle sera récapitulée à l'export.
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        {EXCLUSION_MOTIFS.map(motif => (
+                          <button
+                            key={motif}
+                            onClick={() => excludeLine(m.idx, motif)}
+                            className="py-2.5 px-3 rounded-lg border border-line bg-white text-[12.5px] text-left text-muted-700 hover:border-line-strong hover:bg-subtle-2 transition-colors"
+                          >
+                            {motif}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
 
       {/* Navigation */}
-      <div className="flex justify-between pt-4">
+      <div className="flex justify-between items-center mt-5">
         <button
           onClick={onPrev}
-          className="group flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm bg-gray-100 text-gray-600 hover:bg-gray-200 transition-all"
+          className="py-2.5 px-[18px] rounded-[10px] border border-line bg-white text-[13.5px] font-medium text-muted-700 hover:border-line-strong transition-colors"
         >
-          <svg className="w-4 h-4 transition-transform group-hover:-translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M11 17l-5-5m0 0l5-5m-5 5h12" />
-          </svg>
-          Retour
+          ← Retour
         </button>
         <button
           onClick={onNext}
-          disabled={!allMatched}
-          className={`group flex items-center gap-2 px-7 py-3 rounded-xl font-semibold text-sm transition-all duration-300
-            ${allMatched
-              ? 'bg-gradient-to-r from-pharma-600 to-pharma-700 text-white shadow-lg shadow-pharma-600/25 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]'
-              : 'bg-gray-100 text-gray-300 cursor-not-allowed'
-            }`}
+          disabled={remaining > 0}
+          className={`py-[11px] px-6 rounded-[10px] text-sm font-semibold transition-colors
+            ${remaining === 0
+              ? 'bg-pharma-500 text-white hover:bg-pharma-600'
+              : 'bg-fill text-muted-200 cursor-not-allowed'}`}
         >
-          {allMatched ? 'Suivant' : `${unmatched} produit(s) non associe(s)`}
-          {allMatched && (
-            <svg className="w-4 h-4 transition-transform group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-            </svg>
-          )}
+          {remaining === 0 ? 'Convertir les prix →' : `${remaining} ligne${remaining > 1 ? 's' : ''} à traiter`}
         </button>
       </div>
     </div>

@@ -52,3 +52,46 @@ export const saveTaux = (value) => save(KEY_TAUX, value, isValidTaux)
 
 export const loadCoefficient = () => load(KEY_COEFF, isValidCoefficient, DEFAULT_COEFFICIENT)
 export const saveCoefficient = (value) => save(KEY_COEFF, value, isValidCoefficient)
+
+/* ------------------------------------------------------------------ *
+ * Match memory — "Déjà vu"
+ *
+ * A supplier line matched by hand once should not have to be matched
+ * again on the next BL. Keyed by CIP/EAN, which is stable across
+ * suppliers; the supplier's own wording is not.
+ * ------------------------------------------------------------------ */
+
+const KEY_MEMORY = 'bl-direct-export:matchMemory'
+const MEMORY_MAX = 2000
+
+export function loadMatchMemory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(KEY_MEMORY))
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+export function rememberMatch(cip, medicielProduct) {
+  if (!cip || !medicielProduct?.code) return
+  if (String(cip).startsWith('MANUAL') || String(cip).startsWith('OCR-')) return
+  try {
+    const memory = loadMatchMemory()
+    memory[cip] = { code: medicielProduct.code, produit: medicielProduct.produit }
+    // Keep the map bounded: drop oldest insertions once past the cap.
+    const keys = Object.keys(memory)
+    if (keys.length > MEMORY_MAX) {
+      for (const k of keys.slice(0, keys.length - MEMORY_MAX)) delete memory[k]
+    }
+    localStorage.setItem(KEY_MEMORY, JSON.stringify(memory))
+  } catch {
+    // Storage full or unavailable — memory is a convenience, not a requirement.
+  }
+}
+
+export function clearMatchMemory() {
+  try {
+    localStorage.removeItem(KEY_MEMORY)
+  } catch { /* nothing to clear */ }
+}

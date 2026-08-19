@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
 
 /**
- * A header chip that shows a persisted setting and lets it be edited at any
- * point in the flow, rather than only on the step that consumes it.
+ * A header button showing a persisted setting, with a popover to change it.
+ * Available on every screen, not just the step that consumes the value.
  */
 export default function ParamControl({
-  icon,
+  label,
   value,
   onChange,
-  unit,
+  display,
   title,
   subtitle,
   prefix,
@@ -18,27 +18,30 @@ export default function ParamControl({
   step,
   isValid,
   defaultValue,
-  format = (v) => v.toLocaleString('fr-FR'),
-  note,
   errorTooLow,
   errorTooHigh,
+  open,
+  onToggle,
 }) {
-  const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState(String(value))
   const panelRef = useRef(null)
 
-  useEffect(() => {
+  // Reset the draft whenever the stored value changes or the panel reopens —
+  // adjusted during render rather than in an effect, so no extra pass.
+  const [lastSync, setLastSync] = useState({ value, open })
+  if (lastSync.value !== value || lastSync.open !== open) {
+    setLastSync({ value, open })
     setDraft(String(value))
-  }, [value])
+  }
 
   useEffect(() => {
     if (!open) return
     const onClickOutside = (e) => {
-      if (panelRef.current && !panelRef.current.contains(e.target)) setOpen(false)
+      if (panelRef.current && !panelRef.current.contains(e.target)) onToggle(false)
     }
     document.addEventListener('mousedown', onClickOutside)
     return () => document.removeEventListener('mousedown', onClickOutside)
-  }, [open])
+  }, [open, onToggle])
 
   const parsed = parseFloat(String(draft).replace(',', '.'))
   const tooLow = Number.isFinite(parsed) && parsed < min
@@ -48,36 +51,29 @@ export default function ParamControl({
   const commit = () => {
     if (invalid) return
     onChange(parsed)
-    setOpen(false)
+    onToggle(false)
   }
 
   return (
     <div className="relative" ref={panelRef}>
       <button
         type="button"
-        onClick={() => setOpen(o => !o)}
+        onClick={() => onToggle(!open)}
         title={title}
-        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all
-          ${open
-            ? 'bg-pharma-100 text-pharma-700 border-pharma-300'
-            : 'bg-white text-gray-600 border-gray-200 hover:border-pharma-300 hover:text-pharma-600'
-          }`}
+        className={`flex items-baseline gap-[7px] py-[7px] px-3 rounded-[9px] border bg-white whitespace-nowrap transition-colors
+          ${open ? 'border-line-strong bg-subtle' : 'border-line hover:border-line-strong hover:bg-subtle'}`}
       >
-        <span className="text-sm leading-none">{icon}</span>
-        <span className="tabular-nums font-bold">{format(value)}</span>
-        {unit && <span className="text-gray-400">{unit}</span>}
-        <svg className="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-        </svg>
+        <span className="text-[11px] text-muted-500 uppercase tracking-[.06em]">{label}</span>
+        <span className="font-mono text-[13px] font-semibold text-ink">{display}</span>
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-72 p-4 rounded-2xl bg-white border border-gray-200 shadow-xl z-50 animate-slide-down">
-          <h4 className="font-semibold text-gray-800 text-sm">{title}</h4>
-          <p className="text-xs text-gray-400 mt-0.5 mb-3">{subtitle}</p>
+        <div className="absolute top-[46px] right-0 w-80 bg-white border border-line rounded-xl shadow-[0_12px_32px_rgba(20,40,28,.14)] p-4 z-50 animate-row-in">
+          <div className="text-[13px] font-semibold mb-[3px]">{title}</div>
+          <div className="text-xs text-muted-500 leading-relaxed mb-3">{subtitle}</div>
 
-          <div className="flex items-center gap-2">
-            {prefix && <span className="text-sm text-gray-500 shrink-0">{prefix}</span>}
+          <div className="flex items-center gap-2.5">
+            <span className="font-mono text-[13px] text-muted-500 shrink-0">{prefix}</span>
             <input
               type="number"
               autoFocus
@@ -88,47 +84,38 @@ export default function ParamControl({
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') { e.preventDefault(); commit() }
-                if (e.key === 'Escape') { setDraft(String(value)); setOpen(false) }
+                if (e.key === 'Escape') { setDraft(String(value)); onToggle(false) }
               }}
-              className={`w-full px-3 py-2 text-lg font-bold text-center tabular-nums rounded-xl bg-gray-50 focus:bg-white border
-                ${invalid ? 'border-red-300 text-red-600' : 'border-gray-200 text-pharma-700'}`}
+              className={`flex-1 min-w-0 py-2.5 px-3 rounded-lg border font-mono text-sm font-semibold text-center
+                ${invalid ? 'border-st-error text-st-error' : 'border-line-input text-ink'}`}
             />
-            {suffix && <span className="text-sm text-gray-500 shrink-0">{suffix}</span>}
+            <span className="font-mono text-[13px] text-muted-500 shrink-0">{suffix}</span>
           </div>
 
-          {tooLow && errorTooLow && <p className="text-xs text-red-500 mt-2">{errorTooLow}</p>}
-          {tooHigh && errorTooHigh && <p className="text-xs text-red-500 mt-2">{errorTooHigh}</p>}
+          {tooLow && errorTooLow && <p className="text-xs text-st-error mt-2">{errorTooLow}</p>}
+          {tooHigh && errorTooHigh && <p className="text-xs text-st-error mt-2">{errorTooHigh}</p>}
 
-          {note && (
-            <div className="mt-3 p-2.5 rounded-xl bg-gray-50 border border-gray-100">
-              <p className="text-xs text-gray-500 leading-relaxed">{note}</p>
-            </div>
-          )}
-
-          <div className="flex items-center gap-2 mt-3">
+          <div className="flex items-center gap-2 mt-3.5">
             <button
               type="button"
               onClick={commit}
               disabled={invalid}
-              className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold transition-all
-                ${invalid
-                  ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                  : 'bg-pharma-600 text-white hover:bg-pharma-700'
-                }`}
+              className={`flex-1 py-2 px-3 rounded-lg text-[13px] font-semibold transition-colors
+                ${invalid ? 'bg-fill text-muted-200 cursor-not-allowed' : 'bg-pharma-500 text-white hover:bg-pharma-600'}`}
             >
               Enregistrer
             </button>
             <button
               type="button"
               onClick={() => setDraft(String(defaultValue))}
-              className="px-3 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition-all"
               title={`Revenir a ${defaultValue}`}
+              className="py-2 px-3 rounded-lg text-[13px] font-medium border border-line text-muted-700 hover:border-line-strong bg-white transition-colors"
             >
               Defaut
             </button>
           </div>
 
-          <p className="text-xs text-gray-400 mt-2.5 text-center">
+          <p className="text-[11.5px] text-muted-300 mt-2.5 text-center">
             Retenu pour vos prochaines conversions.
           </p>
         </div>

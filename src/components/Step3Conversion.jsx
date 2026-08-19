@@ -1,28 +1,18 @@
 import { useState, useMemo } from 'react'
 import { PARITE_FIXE, DEFAULT_TAUX, TAUX_MAX, isValidTaux, saveTaux } from '../utils/settings.js'
 
-function InfoCard({ label, value, sub, accent }) {
-  return (
-    <div className="rounded-2xl p-5 border border-gray-100 bg-white shadow-sm text-center">
-      <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">{label}</p>
-      <p className={`text-2xl font-bold ${accent ? 'text-pharma-600' : 'text-gray-800'}`}>{value}</p>
-      {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
-    </div>
-  )
-}
+const GRID = 'grid grid-cols-[minmax(0,2fr)_90px_110px_130px_130px] gap-3'
+
+const fmt = (n) => Math.round(n).toLocaleString('fr-FR')
 
 export default function Step3Conversion({ data, onUpdate, onNext, onPrev }) {
   const [totalFrais, setTotalFrais] = useState(data.totalFrais || 0)
 
-  // The rate lives in App state so the header control and this input stay in
-  // sync, and is persisted so it survives into the next conversion. Keep a
-  // local draft while typing: clearing the field to retype must not overwrite
-  // the saved rate with a half-entered (or fallback) value.
+  // The rate lives in App state so the header control and this step agree, and
+  // is persisted so it carries into the next conversion.
   const tauxEurCfa = data.tauxEurCfa || DEFAULT_TAUX
   const [tauxDraft, setTauxDraft] = useState(String(tauxEurCfa))
 
-  // Follow the header control when it changes the rate from outside this step
-  // (adjusting state during render, rather than in an effect).
   const [lastTaux, setLastTaux] = useState(tauxEurCfa)
   if (tauxEurCfa !== lastTaux) {
     setLastTaux(tauxEurCfa)
@@ -38,62 +28,59 @@ export default function Step3Conversion({ data, onUpdate, onNext, onPrev }) {
     }
   }
 
-  // On blur, discard anything that never became a usable rate.
   const handleTauxBlur = () => {
     if (!isValidTaux(parseFloat(tauxDraft))) setTauxDraft(String(tauxEurCfa))
   }
 
-  const totalQty = useMemo(() => {
-    return (data.matches || []).reduce((sum, m) => sum + m.blProduct.qtyDelivered, 0)
-  }, [data.matches])
-
-  const totalValeurEur = useMemo(() =>
-    (data.matches || []).reduce((sum, m) => sum + m.blProduct.priceEur * m.blProduct.qtyDelivered, 0),
+  // Excluded lines are not bought, so they carry no cost and no share of fees.
+  const retained = useMemo(
+    () => (data.matches || []).filter(m => m.match && m.status !== 'excluded'),
     [data.matches]
   )
 
+  const totalQty = useMemo(
+    () => retained.reduce((sum, m) => sum + m.blProduct.qtyDelivered, 0),
+    [retained]
+  )
+
+  const totalValeurEur = useMemo(
+    () => retained.reduce((sum, m) => sum + m.blProduct.priceEur * m.blProduct.qtyDelivered, 0),
+    [retained]
+  )
+
   const products = useMemo(() => {
-    return (data.matches || []).map(m => {
+    return retained.map(m => {
       const ligneTotalEur = m.blProduct.priceEur * m.blProduct.qtyDelivered
       const part = totalValeurEur > 0 ? ligneTotalEur / totalValeurEur : 0
       const fraisLigne = totalFrais * part
       const fraisUnit = m.blProduct.qtyDelivered > 0 ? fraisLigne / m.blProduct.qtyDelivered : 0
       const paCfaUnit = (m.blProduct.priceEur * tauxEurCfa) + fraisUnit
-      return {
-        ...m,
-        paCfaUnit,
-        fraisUnit,
-        fraisLigne,
-        partPct: Math.round(part * 1000) / 10,
-      }
+      return { ...m, paCfaUnit, fraisUnit, fraisLigne, partPct: Math.round(part * 1000) / 10 }
     })
-  }, [data.matches, totalFrais, totalValeurEur, tauxEurCfa])
+  }, [retained, totalFrais, totalValeurEur, tauxEurCfa])
+
+  const coutRevient = totalValeurEur * tauxEurCfa + totalFrais
 
   const handleNext = () => {
-    onUpdate({
-      totalFrais,
-      tauxEurCfa,
-      convertedProducts: products,
-    })
+    onUpdate({ totalFrais, tauxEurCfa, convertedProducts: products })
     onNext()
   }
 
   return (
-    <div className="space-y-6">
-      <div className="text-center">
-        <h2 className="text-2xl sm:text-3xl font-bold text-gray-800">Conversion & Frais</h2>
-        <p className="text-gray-400 mt-2">Calcul du prix d'achat CFA avec repartition proportionnelle des frais</p>
-      </div>
+    <div>
+      {/* Summary cards */}
+      <div className="grid grid-cols-4 gap-3 mb-[18px]">
+        <div className="bg-white border border-line rounded-xl p-4">
+          <div className="text-[11px] uppercase tracking-[.05em] text-muted-400">Total BL</div>
+          <div className="font-mono text-[22px] font-semibold mt-1.5">
+            {totalValeurEur.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
+          </div>
+          <div className="text-[11px] text-muted-300 mt-1">{totalQty} unités · {products.length} lignes</div>
+        </div>
 
-      {/* Parametres editables */}
-      <div className="grid md:grid-cols-2 gap-4">
-        {/* Taux de change */}
-        <div className="rounded-2xl p-5 border border-gray-100 bg-white shadow-sm">
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
-            Taux de change EUR &rarr; FCFA
-          </label>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-400 font-medium">1 EUR =</span>
+        <div className="bg-white border border-line rounded-xl p-4">
+          <label className="text-[11px] uppercase tracking-[.05em] text-muted-400">Taux appliqué</label>
+          <div className="flex items-baseline gap-1.5 mt-1.5">
             <input
               type="number"
               min={PARITE_FIXE}
@@ -102,106 +89,71 @@ export default function Step3Conversion({ data, onUpdate, onNext, onPrev }) {
               value={tauxDraft}
               onChange={(e) => handleTauxInput(e.target.value)}
               onBlur={handleTauxBlur}
-              className="w-28 px-3 py-2.5 text-lg font-bold text-pharma-700 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white text-center"
+              className="w-full min-w-0 font-mono text-[22px] font-semibold bg-transparent border-0 p-0 focus:outline-none focus:ring-0"
             />
-            <span className="text-sm text-gray-400 font-medium">FCFA</span>
           </div>
-          <p className="text-xs text-gray-400 mt-2">
-            Parite officielle : 1 &euro; = {PARITE_FIXE.toLocaleString('fr-FR')} F, plus vos frais de transfert.
-            Retenu pour les prochaines fois.
-          </p>
+          <div className="text-[11px] text-muted-300 mt-1">Parité fixe {PARITE_FIXE.toLocaleString('fr-FR')}</div>
         </div>
 
-        {/* Frais d'importation */}
-        <div className="rounded-2xl p-5 border border-gray-100 bg-white shadow-sm">
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
-            Total frais d'importation
-          </label>
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1">
-              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <input
-                type="number"
-                min="0"
-                step="1000"
-                value={totalFrais || ''}
-                onChange={(e) => setTotalFrais(parseFloat(e.target.value) || 0)}
-                placeholder="Ex: 250 000"
-                className="w-full pl-10 pr-4 py-2.5 text-lg font-semibold border border-gray-200 rounded-xl bg-gray-50 focus:bg-white"
-              />
-            </div>
-            <span className="text-sm font-medium text-gray-400">FCFA</span>
+        <div className="bg-white border border-line rounded-xl p-4">
+          <label className="text-[11px] uppercase tracking-[.05em] text-muted-400">Frais répartis</label>
+          <div className="flex items-baseline gap-1.5 mt-1.5">
+            <input
+              type="number"
+              min="0"
+              step="1000"
+              value={totalFrais || ''}
+              placeholder="0"
+              onChange={(e) => setTotalFrais(parseFloat(e.target.value) || 0)}
+              className="w-full min-w-0 font-mono text-[22px] font-semibold bg-transparent border-0 p-0 focus:outline-none focus:ring-0"
+            />
+            <span className="font-mono text-[22px] font-semibold text-muted-300">F</span>
           </div>
-          <p className="text-xs text-gray-400 mt-2">Transport, dedouanement, transit... Reparti proportionnellement.</p>
+          <div className="text-[11px] text-muted-300 mt-1">Transport, douane, transit</div>
         </div>
-      </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-3">
-        <InfoCard label="Valeur EUR" value={`${totalValeurEur.toFixed(2)}`} sub={`${totalQty} unites`} />
-        <InfoCard label="Valeur CFA" value={`${Math.round(totalValeurEur * tauxEurCfa).toLocaleString('fr-FR')}`} sub="Hors frais" accent />
-        <InfoCard label="Repartition" value="Proportionnelle" sub="Au prorata du PA" />
+        <div className="bg-rail border border-rail rounded-xl p-4 text-white">
+          <div className="text-[11px] uppercase tracking-[.05em] text-rail-badge-text">Coût de revient</div>
+          <div className="font-mono text-[22px] font-semibold mt-1.5">{fmt(coutRevient)} F</div>
+          <div className="text-[11px] text-rail-dim mt-1">Marchandise + frais</div>
+        </div>
       </div>
 
       {/* Table */}
-      <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50/80">
-                <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Produit</th>
-                <th className="text-center px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Qte</th>
-                <th className="text-right px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">PU EUR</th>
-                <th className="text-right px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">PU CFA</th>
-                <th className="text-right px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Part</th>
-                <th className="text-right px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Frais/u</th>
-                <th className="text-right px-4 py-3 font-semibold text-pharma-600 text-xs uppercase tracking-wide">PA CFA/u</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {products.map((p, idx) => (
-                <tr key={idx} className="hover:bg-pharma-50/30 transition-colors">
-                  <td className="px-4 py-3">
-                    <span className="font-medium text-gray-800">{p.match.produit}</span>
-                  </td>
-                  <td className="px-3 py-3 text-center tabular-nums">{p.blProduct.qtyDelivered}</td>
-                  <td className="px-3 py-3 text-right tabular-nums">{p.blProduct.priceEur.toFixed(2)}</td>
-                  <td className="px-3 py-3 text-right tabular-nums">{Math.round(p.blProduct.priceEur * tauxEurCfa).toLocaleString('fr-FR')}</td>
-                  <td className="px-3 py-3 text-right">
-                    <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-xs tabular-nums">{p.partPct}%</span>
-                  </td>
-                  <td className="px-3 py-3 text-right tabular-nums text-amber-600">{Math.round(p.fraisUnit).toLocaleString('fr-FR')}</td>
-                  <td className="px-4 py-3 text-right">
-                    <span className="font-bold text-pharma-700 tabular-nums">{Math.round(p.paCfaUnit).toLocaleString('fr-FR')}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="bg-white border border-line rounded-[14px] overflow-hidden">
+        <div className={`${GRID} py-2.5 px-4 bg-subtle border-b border-line text-[10.5px] uppercase tracking-[.06em] text-muted-400 font-semibold`}>
+          <div>Produit</div>
+          <div className="text-right">Qté</div>
+          <div className="text-right">PU €</div>
+          <div className="text-right">Part frais</div>
+          <div className="text-right">PA FCFA</div>
         </div>
+        {products.map((p, idx) => (
+          <div key={idx} className={`${GRID} py-[11px] px-4 border-b border-line-softer last:border-0 items-center`}>
+            <div className="text-[13px] truncate">{p.match.produit}</div>
+            <div className="text-right font-mono text-[12.5px] text-muted-600">{p.blProduct.qtyDelivered}</div>
+            <div className="text-right font-mono text-[12.5px] text-muted-600">
+              {p.blProduct.priceEur.toFixed(2).replace('.', ',')}
+            </div>
+            <div className="text-right font-mono text-[12.5px] text-muted-300">+{fmt(p.fraisUnit)} F</div>
+            <div className="text-right font-mono text-[13px] font-semibold">{fmt(p.paCfaUnit)} F</div>
+          </div>
+        ))}
       </div>
 
       {/* Navigation */}
-      <div className="flex justify-between pt-4">
+      <div className="flex justify-between items-center mt-5">
         <button
           onClick={onPrev}
-          className="group flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm bg-gray-100 text-gray-600 hover:bg-gray-200"
+          className="py-2.5 px-[18px] rounded-[10px] border border-line bg-white text-[13.5px] font-medium text-muted-700 hover:border-line-strong transition-colors"
         >
-          <svg className="w-4 h-4 transition-transform group-hover:-translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M11 17l-5-5m0 0l5-5m-5 5h12" />
-          </svg>
-          Retour
+          ← Retour
         </button>
         <button
           onClick={handleNext}
-          className="group flex items-center gap-2 px-7 py-3 rounded-xl font-semibold text-sm bg-gradient-to-r from-pharma-500 to-pharma-700 text-white shadow-lg shadow-pharma-600/25 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]"
+          className="py-[11px] px-6 rounded-[10px] bg-pharma-500 text-white text-sm font-semibold hover:bg-pharma-600 transition-colors"
         >
-          Suivant
-          <svg className="w-4 h-4 transition-transform group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-          </svg>
+          Valider les prix →
         </button>
       </div>
     </div>

@@ -191,68 +191,82 @@ export function buildSearchIndex(medicielProducts) {
  * Auto-match BL products against Médiciel base.
  * Returns array of { blProduct, match, score, status }
  */
-export function autoMatch(blProducts, medicielProducts) {
+export function autoMatch(blProducts, medicielProducts, matchMemory = {}) {
   const normalizedInternals = medicielProducts.map(p => ({
     product: p,
     normalized: normalizeLabel(p.produit),
   }))
+  const byCode = new Map(medicielProducts.map(p => [String(p.code), p]))
 
   return blProducts.map(blProduct => {
-    const supplierNorm = normalizeLabel(blProduct.designation)
-    const supplierTokens = tokenize(supplierNorm)
-    // The first significant token is the drug name (DCI) — most important for matching
-    const dciToken = supplierTokens.length > 0 ? supplierTokens[0] : ''
-
-    const scored = normalizedInternals
-      .map(internal => {
-        const score = computeScore(supplierNorm, internal.normalized)
-
-        // Check if the DCI (first word) matches: prefix match only
-        // e.g. GAVISCON matches GAVISCONELLE and vice versa
-        const internalTokens = tokenize(internal.normalized)
-        const internalDci = internalTokens.length > 0 ? internalTokens[0] : ''
-        const dciMatches = dciToken && internalDci && (
-          dciToken.startsWith(internalDci) ||
-          internalDci.startsWith(dciToken)
-        )
-
-        return {
-          product: internal.product,
-          score,
-          dciMatches,
-        }
-      })
-      // Only keep candidates where DCI (drug name) matches
-      .filter(c => c.dciMatches)
-      .filter(c => c.score > 0.05)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 10)
-
-    const bestScore = scored.length > 0 ? scored[0].score : 0
-    const bestDciMatch = scored.length > 0 && scored[0].dciMatches
-    const scorePercent = Math.round(bestScore * 100)
-
-    let status
-    let match = null
-
-    if (bestScore >= 0.6) {
-      status = 'auto'
-      match = scored[0].product
-    } else if (bestScore >= 0.3 || bestDciMatch) {
-      // If DCI matches, always propose (even low score) — user can verify
-      status = 'warning'
-      match = scored[0].product
-    } else {
-      status = 'error'
+    // A line matched by hand on a previous BL wins outright: the user already
+    // decided, and the supplier's wording has not changed since.
+    const remembered = matchMemory[blProduct.cip]
+    if (remembered) {
+      const product = byCode.get(String(remembered.code))
+      if (product) {
+        return { blProduct, match: product, score: 100, status: 'seen' }
+      }
     }
-
-    return {
-      blProduct,
-      match,
-      score: scorePercent,
-      status,
-    }
+    return matchOne(blProduct, normalizedInternals)
   })
+}
+
+function matchOne(blProduct, normalizedInternals) {
+  const supplierNorm = normalizeLabel(blProduct.designation)
+  const supplierTokens = tokenize(supplierNorm)
+  // The first significant token is the drug name (DCI) — most important for matching
+  const dciToken = supplierTokens.length > 0 ? supplierTokens[0] : ''
+
+  const scored = normalizedInternals
+    .map(internal => {
+      const score = computeScore(supplierNorm, internal.normalized)
+
+      // Check if the DCI (first word) matches: prefix match only
+      // e.g. GAVISCON matches GAVISCONELLE and vice versa
+      const internalTokens = tokenize(internal.normalized)
+      const internalDci = internalTokens.length > 0 ? internalTokens[0] : ''
+      const dciMatches = dciToken && internalDci && (
+        dciToken.startsWith(internalDci) ||
+        internalDci.startsWith(dciToken)
+      )
+
+      return {
+        product: internal.product,
+        score,
+        dciMatches,
+      }
+    })
+    // Only keep candidates where DCI (drug name) matches
+    .filter(c => c.dciMatches)
+    .filter(c => c.score > 0.05)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10)
+
+  const bestScore = scored.length > 0 ? scored[0].score : 0
+  const bestDciMatch = scored.length > 0 && scored[0].dciMatches
+  const scorePercent = Math.round(bestScore * 100)
+
+  let status
+  let match = null
+
+  if (bestScore >= 0.6) {
+    status = 'auto'
+    match = scored[0].product
+  } else if (bestScore >= 0.3 || bestDciMatch) {
+    // If DCI matches, always propose (even low score) — user can verify
+    status = 'warning'
+    match = scored[0].product
+  } else {
+    status = 'error'
+  }
+
+  return {
+    blProduct,
+    match,
+    score: scorePercent,
+    status,
+  }
 }
 
 /**
