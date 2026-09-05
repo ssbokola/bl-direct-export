@@ -59,10 +59,21 @@ export const saveCoefficient = (value) => save(KEY_COEFF, value, isValidCoeffici
  * A supplier line matched by hand once should not have to be matched
  * again on the next BL. Keyed by CIP/EAN, which is stable across
  * suppliers; the supplier's own wording is not.
+ *
+ * localStorage is the fast, always-available local cache — it's what
+ * loadMatchMemory()/rememberMatch() read and write synchronously, so the
+ * rest of the app never has to wait on a network call. Supabase (when
+ * configured, see supabaseClient.js) is the shared team copy: synced into
+ * the local cache once via syncMatchMemory(), then kept up to date with a
+ * best-effort background write on every new match. Without Supabase
+ * configured, this degrades to the previous browser-local-only behavior.
  * ------------------------------------------------------------------ */
+
+import { supabase } from './supabaseClient.js'
 
 const KEY_MEMORY = 'bl-direct-export:matchMemory'
 const MEMORY_MAX = 2000
+const TABLE = 'match_memory'
 
 export function loadMatchMemory() {
   try {
@@ -73,12 +84,8 @@ export function loadMatchMemory() {
   }
 }
 
-export function rememberMatch(cip, medicielProduct) {
-  if (!cip || !medicielProduct?.code) return
-  if (String(cip).startsWith('MANUAL') || String(cip).startsWith('OCR-')) return
+function saveMatchMemory(memory) {
   try {
-    const memory = loadMatchMemory()
-    memory[cip] = { code: medicielProduct.code, produit: medicielProduct.produit }
     // Keep the map bounded: drop oldest insertions once past the cap.
     const keys = Object.keys(memory)
     if (keys.length > MEMORY_MAX) {
@@ -87,6 +94,50 @@ export function rememberMatch(cip, medicielProduct) {
     localStorage.setItem(KEY_MEMORY, JSON.stringify(memory))
   } catch {
     // Storage full or unavailable — memory is a convenience, not a requirement.
+  }
+}
+
+// Pulls the whole team's memory from Supabase into the local cache. Call
+// once per session (e.g. when Step2Matching mounts) before relying on
+// loadMatchMemory() for a fresh BL. Memoized so repeated calls in the same
+// session don't re-fetch. Resolves to the merged memory either way — if
+// Supabase isn't configured or the request fails, it resolves to whatever
+// was already cached locally.
+let syncPromise = null
+export function syncMatchMemory() {
+  if (!supabase) return Promise.resolve(loadMatchMemory())
+  if (!syncPromise) {
+    syncPromise = supabase
+      .from(TABLE)
+      .select('cip, code, produit')
+      .then(({ data, error }) => {
+        if (error || !data) return loadMatchMemory()
+        const memory = loadMatchMemory()
+        for (const row of data) memory[row.cip] = { code: row.code, produit: row.produit }
+        saveMatchMemory(memory)
+        return memory
+      })
+      .catch(() => loadMatchMemory())
+  }
+  return syncPromise
+}
+
+export function rememberMatch(cip, medicielProduct) {
+  if (!cip || !medicielProduct?.code) return
+  if (String(cip).startsWith('MANUAL') || String(cip).startsWith('OCR-')) return
+
+  const memory = loadMatchMemory()
+  memory[cip] = { code: medicielProduct.code, produit: medicielProduct.produit }
+  saveMatchMemory(memory)
+
+  // Best-effort share with the rest of the team — the local cache above
+  // already has it regardless of whether this succeeds.
+  if (supabase) {
+    supabase.from(TABLE).upsert({
+      cip: String(cip),
+      code: medicielProduct.code,
+      produit: medicielProduct.produit,
+    }).then(() => {}, () => {})
   }
 }
 

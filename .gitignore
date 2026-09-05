@@ -25,3 +25,7 @@ dist-ssr
 
 # Tesseract trained data (downloaded at runtime)
 *.traineddata
+
+# Local secrets (Supabase keys)
+.env
+.env.local

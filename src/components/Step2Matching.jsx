@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { autoMatch, buildSearchIndex, searchMediciel } from '../utils/matching.js'
-import { loadMatchMemory, rememberMatch } from '../utils/settings.js'
+import { loadMatchMemory, rememberMatch, syncMatchMemory } from '../utils/settings.js'
 
 const STATUS_META = {
   auto: { label: 'Auto', fg: 'text-st-auto', bg: 'bg-st-auto-bg', raw: '#1a7a3c' },
@@ -44,9 +44,16 @@ export default function Step2Matching({ data, onUpdate, onNext, onPrev }) {
 
   useEffect(() => {
     if (matches.length === 0 && data.blProducts?.length > 0 && data.medicielProducts?.length > 0) {
-      const result = autoMatch(data.blProducts, data.medicielProducts, loadMatchMemory())
-      setMatches(result)
-      onUpdate({ matches: result })
+      let cancelled = false
+      // Pull the team's shared "déjà vu" memory before the first pass, so a
+      // match made on another workstation is picked up here too.
+      syncMatchMemory().then((memory) => {
+        if (cancelled) return
+        const result = autoMatch(data.blProducts, data.medicielProducts, memory)
+        setMatches(result)
+        onUpdate({ matches: result })
+      })
+      return () => { cancelled = true }
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
