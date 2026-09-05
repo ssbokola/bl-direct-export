@@ -29,7 +29,10 @@ const EXCLUSION_MOTIFS = [
 export default function Step2Matching({ data, onUpdate, onNext, onPrev }) {
   const [matches, setMatches] = useState(data.matches || [])
   const [filter, setFilter] = useState('all')
-  const [selected, setSelected] = useState(0)
+  // Tracks the stable match idx (not a position in `visible`), so filtering
+  // or resolving a line can never leave `selected` pointing at a row that
+  // shifted into a different position.
+  const [selected, setSelected] = useState(null)
   const [expanded, setExpanded] = useState(null)
   const [queries, setQueries] = useState({})
   const rowRefs = useRef({})
@@ -59,13 +62,11 @@ export default function Step2Matching({ data, onUpdate, onNext, onPrev }) {
     [matches, filter]
   )
 
-  const counts = useMemo(() => ({
-    all: matches.length,
-    auto: matches.filter(m => m.status === 'auto').length,
-    seen: matches.filter(m => m.status === 'seen').length,
-    warning: matches.filter(m => m.status === 'warning').length,
-    error: matches.filter(m => m.status === 'error').length,
-  }), [matches])
+  const counts = useMemo(() => matches.reduce((acc, m) => {
+    acc.all++
+    if (acc[m.status] !== undefined) acc[m.status]++
+    return acc
+  }, { all: 0, auto: 0, seen: 0, warning: 0, error: 0 }), [matches])
 
   const resolved = matches.filter(m => m.match || m.status === 'excluded').length
   const remaining = matches.length - resolved
@@ -96,6 +97,13 @@ export default function Step2Matching({ data, onUpdate, onNext, onPrev }) {
     commit(updated)
   }, [matches, data.medicielProducts, commit])
 
+  // If the selected line drops out of `visible` (filtered out, excluded,
+  // restored, matched…), fall back to the first visible line instead of
+  // leaving `selected` pointing at whatever row shifted into its old spot.
+  // Derived at render time rather than via an effect + setState, so there's
+  // never a frame where `selected` refers to a stale row.
+  const activeSelected = visible.some(v => v.idx === selected) ? selected : (visible[0]?.idx ?? null)
+
   // Keyboard navigation over the visible rows.
   useEffect(() => {
     const onKey = (e) => {
@@ -106,10 +114,12 @@ export default function Step2Matching({ data, onUpdate, onNext, onPrev }) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault()
         const delta = e.key === 'ArrowDown' ? 1 : -1
-        setSelected(s => Math.max(0, Math.min(visible.length - 1, s + delta)))
+        const pos = visible.findIndex(v => v.idx === activeSelected)
+        const nextPos = Math.max(0, Math.min(visible.length - 1, (pos === -1 ? 0 : pos) + delta))
+        setSelected(visible[nextPos]?.idx ?? null)
         setExpanded(null)
       } else if (e.key === 'Enter') {
-        const row = visible[selected]
+        const row = visible.find(v => v.idx === activeSelected)
         if (!row) return
         e.preventDefault()
         setExpanded(x => x === row.idx ? null : row.idx)
@@ -119,12 +129,12 @@ export default function Step2Matching({ data, onUpdate, onNext, onPrev }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [visible, selected])
+  }, [visible, activeSelected])
 
   // Keep the highlighted row in view while arrowing through a long BL.
   useEffect(() => {
-    rowRefs.current[selected]?.scrollIntoView({ block: 'nearest' })
-  }, [selected])
+    rowRefs.current[activeSelected]?.scrollIntoView({ block: 'nearest' })
+  }, [activeSelected])
 
   const searchResults = useCallback((idx) => {
     const query = queries[idx] || ''
@@ -142,7 +152,7 @@ export default function Step2Matching({ data, onUpdate, onNext, onPrev }) {
             return (
               <button
                 key={key}
-                onClick={() => { setFilter(key); setSelected(0); setExpanded(null) }}
+                onClick={() => { setFilter(key); setExpanded(null) }}
                 className={`flex items-center gap-[7px] py-[7px] px-[13px] rounded-lg text-[12.5px] font-medium transition-colors
                   ${on ? 'bg-white text-ink shadow-[0_1px_3px_rgba(20,40,28,.10)]' : 'text-muted-600 hover:text-ink'}`}
               >
@@ -189,23 +199,23 @@ export default function Step2Matching({ data, onUpdate, onNext, onPrev }) {
           </div>
         )}
 
-        {visible.map((m, i) => {
+        {visible.map((m) => {
           const meta = STATUS_META[m.status] || STATUS_META.error
-          const isSelected = i === selected
+          const isSelected = m.idx === activeSelected
           const isExpanded = expanded === m.idx
           const attention = m.status === 'warning' || m.status === 'error'
           const excluded = m.status === 'excluded'
-          const results = searchResults(m.idx)
+          const results = isExpanded ? searchResults(m.idx) : []
 
           return (
             <div
               key={m.idx}
-              ref={el => { rowRefs.current[i] = el }}
+              ref={el => { rowRefs.current[m.idx] = el }}
               className="border-b border-line-softer"
               style={attention ? { boxShadow: `inset 3px 0 0 ${meta.raw}` } : undefined}
             >
               <div
-                onClick={() => setSelected(i)}
+                onClick={() => setSelected(m.idx)}
                 className={`${GRID} px-4 py-[11px] cursor-pointer transition-colors
                   ${isSelected ? 'bg-pharma-50' : attention ? `${meta.bg}/40` : 'bg-white'}`}
               >
@@ -242,7 +252,7 @@ export default function Step2Matching({ data, onUpdate, onNext, onPrev }) {
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
-                      setSelected(i)
+                      setSelected(m.idx)
                       if (excluded) restoreLine(m.idx)
                       else setExpanded(x => x === m.idx ? null : m.idx)
                     }}

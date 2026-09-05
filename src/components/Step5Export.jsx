@@ -87,18 +87,22 @@ export default function Step5Export({ data, onPrev, onFinish }) {
         </div>
 
         <div className="bg-white border border-line rounded-[14px] mt-4 overflow-hidden">
-          <div className="py-2.5 px-4 bg-subtle border-b border-line text-[10.5px] uppercase tracking-[.06em] text-muted-400 font-semibold grid grid-cols-[90px_minmax(0,2fr)_60px_110px_110px_60px] gap-3">
+          <div className="py-2.5 px-4 bg-subtle border-b border-line text-[10.5px] uppercase tracking-[.06em] text-muted-400 font-semibold grid grid-cols-[90px_minmax(0,2fr)_55px_55px_100px_100px_55px] gap-3">
             <div>Code</div>
             <div>Libellé</div>
-            <div className="text-right">Qté</div>
+            <div className="text-right">Cmd</div>
+            <div className="text-right">Livré</div>
             <div className="text-right">PA CFA</div>
             <div className="text-right">PV</div>
             <div className="text-right">TVA</div>
           </div>
           {rows.map((p, idx) => (
-            <div key={idx} className="py-2.5 px-4 border-b border-line-softer last:border-0 grid grid-cols-[90px_minmax(0,2fr)_60px_110px_110px_60px] gap-3 items-center">
+            <div key={idx} className="py-2.5 px-4 border-b border-line-softer last:border-0 grid grid-cols-[90px_minmax(0,2fr)_55px_55px_100px_100px_55px] gap-3 items-center">
               <div className="font-mono text-[11.5px] text-muted-400">{p.codeMediciel}</div>
               <div className="text-[13px] truncate">{p.libelle}</div>
+              <div className={`text-right font-mono text-[12.5px] ${p.qtyOrdered !== p.qtyDelivered ? 'text-st-warn font-semibold' : 'text-muted-400'}`}>
+                {p.qtyOrdered}
+              </div>
               <div className="text-right font-mono text-[12.5px]">{p.qtyDelivered}</div>
               <div className="text-right font-mono text-[12.5px] text-muted-600">{fmt(p.paCfa)}</div>
               <div className="text-right font-mono text-[13px] font-semibold">{fmt(p.pvPublic)}</div>

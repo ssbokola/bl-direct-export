@@ -9,10 +9,10 @@ import Step4Validation from './components/Step4Validation.jsx'
 import Step5Export from './components/Step5Export.jsx'
 import { loadTaux, saveTaux, loadCoefficient, saveCoefficient } from './utils/settings.js'
 
-export default function App() {
-  const [screen, setScreen] = useState('home')
-  const [maxStep, setMaxStep] = useState(1)
-  const [data, setData] = useState({
+// BL-specific fields, reset whenever the user finishes or starts a new BL.
+// tauxEurCfa/coefficient are persisted app settings and are kept across runs.
+function makeInitialData() {
+  return {
     pdfFile: null,
     excelFile: null,
     blProducts: [],
@@ -29,7 +29,13 @@ export default function App() {
     coefficient: loadCoefficient(),
     convertedProducts: [],
     validatedPrices: [],
-  })
+  }
+}
+
+export default function App() {
+  const [screen, setScreen] = useState('home')
+  const [maxStep, setMaxStep] = useState(1)
+  const [data, setData] = useState(makeInitialData)
 
   const updateData = useCallback((updates) => {
     setData(prev => ({ ...prev, ...updates }))
@@ -67,6 +73,14 @@ export default function App() {
     return target <= maxStep
   }, [maxStep])
 
+  // Clears the current BL so the next run of Step 1..5 doesn't inherit
+  // stale products/matches/prices — called before leaving a finished BL
+  // (onFinish) and before starting a new one from Home (onStart).
+  const resetBl = useCallback(() => {
+    setData(makeInitialData())
+    setMaxStep(1)
+  }, [])
+
   // Lines still needing a decision — surfaced as a badge on the rail.
   const attentionCount = useMemo(
     () => (data.matches || []).filter(m => !m.match && m.status !== 'excluded').length,
@@ -79,14 +93,14 @@ export default function App() {
         data={data}
         resumeStep={maxStep}
         onResume={() => goToStep(maxStep)}
-        onStart={() => goToStep(1)}
+        onStart={() => { resetBl(); goToStep(1) }}
       />
     ),
     1: <Step1Import data={data} onUpdate={updateData} onNext={goNext} />,
     2: <Step2Matching data={data} onUpdate={updateData} onNext={goNext} onPrev={goPrev} />,
     3: <Step3Conversion data={data} onUpdate={updateData} onNext={goNext} onPrev={goPrev} />,
     4: <Step4Validation data={data} onUpdate={updateData} onNext={goNext} onPrev={goPrev} />,
-    5: <Step5Export data={data} onPrev={goPrev} onFinish={() => goToStep('home')} />,
+    5: <Step5Export data={data} onPrev={goPrev} onFinish={() => { resetBl(); goToStep('home') }} />,
   }
 
   return (

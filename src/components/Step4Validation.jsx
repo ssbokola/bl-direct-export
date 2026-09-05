@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { DEFAULT_COEFFICIENT } from '../utils/settings.js'
 
-const GRID = 'grid grid-cols-[minmax(0,2fr)_130px_90px_130px_100px_44px] gap-3'
+const GRID = 'grid grid-cols-[minmax(0,2fr)_130px_90px_130px_100px_110px_44px] gap-3'
 
 const fmt = (n) => Math.round(n).toLocaleString('fr-FR')
 
@@ -86,6 +86,7 @@ export default function Step4Validation({ data, onUpdate, onNext, onPrev }) {
           <div className="text-right">Coeff</div>
           <div className="text-right">PV arrondi</div>
           <div className="text-right">Marge</div>
+          <div className="text-right">Écart PV</div>
           <div />
         </div>
 
@@ -96,8 +97,19 @@ export default function Step4Validation({ data, onUpdate, onNext, onPrev }) {
           const marge = pv > 0 ? (1 - pa / pv) * 100 : 0
           const overridden = (overrides[idx] !== undefined)
 
+          // Flag lines whose new PV drifts far from the price already in use
+          // at the pharmacy — a likely matching error or coefficient mistake.
+          const pvActuel = p.match?.prixVenteTTC || 0
+          const ecartPct = pvActuel > 0 ? ((pv - pvActuel) / pvActuel * 100) : 0
+          const isOverpriced = pvActuel > 0 && ecartPct > 10
+          const isUnderpriced = pvActuel > 0 && ecartPct < -10
+
           return (
-            <div key={idx} className={`${GRID} py-2.5 px-4 border-b border-line-softer last:border-0 items-center ${overridden ? 'bg-st-seen-bg/30' : ''}`}>
+            <div
+              key={idx}
+              className={`${GRID} py-2.5 px-4 border-b border-line-softer last:border-0 items-center
+                ${isOverpriced ? 'bg-red-50/60' : isUnderpriced ? 'bg-blue-50/40' : overridden ? 'bg-st-seen-bg/30' : ''}`}
+            >
               <div className="text-[13px] truncate">{p.match.produit}</div>
               <div className="text-right font-mono text-[12.5px] text-muted-600">{fmt(pa)}</div>
               <div className={`text-right font-mono text-[12.5px] ${overridden ? 'text-st-seen font-semibold' : 'text-muted-600'}`}>
@@ -115,6 +127,19 @@ export default function Step4Validation({ data, onUpdate, onNext, onPrev }) {
                 />
               </div>
               <div className="text-right font-mono text-[12.5px] text-st-auto">{marge.toFixed(0)} %</div>
+              <div className="text-right">
+                {pvActuel > 0 ? (
+                  <span
+                    className={`inline-block py-0.5 px-2 rounded-full font-mono text-[11.5px] font-medium
+                      ${isOverpriced ? 'bg-red-100 text-red-600' : isUnderpriced ? 'bg-blue-100 text-blue-600' : 'text-muted-400'}`}
+                    title={`PV actuel Médiciel : ${fmt(pvActuel)} F`}
+                  >
+                    {ecartPct > 0 ? '+' : ''}{ecartPct.toFixed(1)} %
+                  </span>
+                ) : (
+                  <span className="text-[11.5px] text-muted-300">—</span>
+                )}
+              </div>
               <div className="flex justify-end">
                 {overridden && (
                   <button
@@ -129,6 +154,12 @@ export default function Step4Validation({ data, onUpdate, onNext, onPrev }) {
             </div>
           )
         })}
+      </div>
+
+      <div className="flex items-center gap-4 mt-2.5 text-[11.5px] text-muted-400">
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-100 border border-red-200" /> PV &gt; PV actuel + 10 %</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-blue-100 border border-blue-200" /> PV &lt; PV actuel − 10 %</span>
+        <span>— PV actuel non disponible (nouveau produit)</span>
       </div>
 
       {/* Navigation */}
