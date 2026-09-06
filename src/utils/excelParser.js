@@ -2,8 +2,23 @@ import * as XLSX from 'xlsx'
 
 /**
  * Parse the Médiciel product base Excel file.
- * Headers are at row 8. Rows 1-7 are pharmacy header.
- * Intermediate lines "EMPLACEMENT : RAYON..." are separators to skip.
+ *
+ * Supports two Médiciel export formats, auto-detected by scanning the first
+ * rows for a header line (see findHeaderRowIndex) rather than assuming a
+ * fixed row:
+ *  - "Etat_ES_ValorisationDetaillee" (stock valuation): headers at row 8,
+ *    columns "Code produit"/"Stock"/"Prix Achat HT"/"Prix Vente TTC" — but
+ *    this report only lists products with stock on hand, so anything
+ *    currently out of stock (exactly what a BL is often restocking) is
+ *    silently absent from it.
+ *  - "Etat_ListeProduitCatRotation" (full A/B/C nomenclature listing,
+ *    "Stock : Peu importe"): headers one row earlier, columns "Identifiant
+ *    produit"/"S. Total"/"P. Achat HT"/"P. vente TTC" — includes zero-stock
+ *    products, so it's the format to prefer when out-of-stock BL lines need
+ *    to match.
+ *
+ * Intermediate lines "EMPLACEMENT : RAYON..." (only in the valuation format)
+ * are separators to skip.
  *
  * Returns array of { code, produit, stockTotal, prixAchatHT, prixVenteTTC, tva, fournisseur }
  */
@@ -17,13 +32,12 @@ export async function parseMedicielExcel(file) {
   const sheetName = workbook.SheetNames[0]
   const sheet = workbook.Sheets[sheetName]
 
-  // Convert to JSON starting from row 8 (0-indexed: row 7)
   const rawData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
 
-  // Row 8 (index 7) contains headers
-  const headerRow = rawData[7]
+  const headerRowIdx = findHeaderRowIndex(rawData)
+  const headerRow = rawData[headerRowIdx]
   if (!headerRow) {
-    throw new Error('Impossible de trouver les en-têtes à la ligne 8 du fichier Excel.')
+    throw new Error('Impossible de trouver la ligne d\'en-têtes du fichier Excel.')
   }
 
   // Map header names to indices — replace newlines with spaces for matching
@@ -34,31 +48,32 @@ export async function parseMedicielExcel(file) {
   })
 
   // Debug: show all detected headers
-  console.log('🔍 Excel headers:', headerMap)
+  console.log(`🔍 Excel headers (ligne ${headerRowIdx + 1}):`, headerMap)
 
-  // Find column indices
-  const colCode = findCol(headerMap, ['code produit', 'code'])
+  // Find column indices — candidates cover both known export formats.
+  const colCode = findCol(headerMap, ['code produit', 'identifiant produit', 'code'])
   const colProduit = findCol(headerMap, ['produit', 'libellé', 'libelle', 'désignation', 'designation'])
-  const colStockTotal = findCol(headerMap, ['stock total', 'total stock'])
-  const colPrixAchat = findCol(headerMap, ['prix achat ht', 'prix achat', 'pa ht', 'prix d\'achat', 'p.a. ht', 'pa'])
-  const colPrixVente = findCol(headerMap, ['prix vente ttc', 'prix vente', 'pv ttc', 'prix de vente', 'p.v. ttc', 'pv', 'pvp', 'prix public', 'ppv', 'p.vente', 'pvente', 'tarif'])
+  const colStockTotal = findCol(headerMap, ['stock total', 'total stock', 's. total'])
+  const colPrixAchat = findCol(headerMap, ['prix achat ht', 'p. achat ht', 'prix achat', 'pa ht', 'prix d\'achat', 'p.a. ht', 'pa'])
+  const colPrixVente = findCol(headerMap, ['prix vente ttc', 'p. vente ttc', 'prix vente', 'pv ttc', 'prix de vente', 'p.v. ttc', 'pv', 'pvp', 'prix public', 'ppv', 'p.vente', 'pvente', 'tarif'])
   const colTva = findCol(headerMap, ['t', 'tva'])
   const colFournisseur = findCol(headerMap, ['fournisseur principal', 'fournisseur'])
 
   console.log('🔍 Excel column indices:', { colCode, colProduit, colStockTotal, colPrixAchat, colPrixVente, colTva, colFournisseur })
 
   // Debug: show first data row values at each column
-  if (rawData[8]) {
+  const firstDataRow = headerRowIdx + 1
+  if (rawData[firstDataRow]) {
     console.log('🔍 Excel first data row:', {
-      code: rawData[8][colCode],
-      produit: rawData[8][colProduit],
-      prixVente: rawData[8][colPrixVente],
-      prixAchat: rawData[8][colPrixAchat],
+      code: rawData[firstDataRow][colCode],
+      produit: rawData[firstDataRow][colProduit],
+      prixVente: rawData[firstDataRow][colPrixVente],
+      prixAchat: rawData[firstDataRow][colPrixAchat],
     })
   }
 
   const products = []
-  for (let i = 8; i < rawData.length; i++) {
+  for (let i = firstDataRow; i < rawData.length; i++) {
     const row = rawData[i]
     if (!row || row.length === 0) continue
 
@@ -93,6 +108,28 @@ export async function parseMedicielExcel(file) {
   }
 
   return products
+}
+
+/**
+ * The pharmacy-identity block above the header varies by one row between
+ * Médiciel export types (the valuation report has an extra "EMPLACEMENT : 0"
+ * line the nomenclature listing doesn't), so the header can't be assumed at
+ * a fixed row. Scan the first rows for the one that has BOTH a "Produit"
+ * cell and a code-column cell ("Code produit" or "Identifiant produit") —
+ * specific enough that a data row won't accidentally match it.
+ */
+function findHeaderRowIndex(rawData) {
+  const CODE_HEADERS = ['code produit', 'identifiant produit', 'code']
+  const limit = Math.min(rawData.length, 15)
+  for (let i = 0; i < limit; i++) {
+    const row = rawData[i]
+    if (!row) continue
+    const cells = row.map((c) => String(c).trim().toLowerCase())
+    const hasProduit = cells.some((c) => c === 'produit')
+    const hasCode = cells.some((c) => CODE_HEADERS.includes(c))
+    if (hasProduit && hasCode) return i
+  }
+  return 7 // repli historique : ligne 8 (ancien format, si jamais rien n'est détecté)
 }
 
 function findCol(headerMap, candidates) {
