@@ -99,13 +99,20 @@ function findCol(headerMap, candidates) {
   for (const c of candidates) {
     if (headerMap[c] !== undefined) return headerMap[c]
   }
-  // Partial match
+  // Partial match — skip candidates under 3 chars (e.g. the bare "t" for a
+  // "T" TVA column): as a substring check, a short candidate matches almost
+  // any header ("t" is inside "code produit"), so it must be an exact match
+  // (checked above) or nothing.
   for (const [key, idx] of Object.entries(headerMap)) {
     for (const c of candidates) {
+      if (c.length < 3) continue
       if (key.includes(c) || c.includes(key)) return idx
     }
   }
-  return 0
+  // No match at all — -1 rather than 0, so a missing column (e.g. this
+  // export has no TVA/Fournisseur) reads as empty instead of silently
+  // aliasing to "Code produit".
+  return -1
 }
 
 /**
