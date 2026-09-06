@@ -257,6 +257,23 @@ export function WorkRow({
           ) : (
             <span>{priced && pvLive ? fmtF(pv) : '—'}</span>
           )}
+          {/* PV actuel Médiciel, visible en clair pour comparer au PV du BL —
+              c'était une colonne dédiée dans la toute première version de
+              l'appli ("PV actuel" | "PV calculé" | "Écart") ; la refonte
+              l'avait réduit à un simple title="" sur le badge d'écart,
+              illisible sans survol. */}
+          {priced && pvLive && line.pvActuel > 0 && (
+            <div
+              className="num"
+              style={{
+                fontSize: 10,
+                marginTop: 2,
+                color: drift ? (ecart > 0 ? 'var(--color-error)' : 'var(--color-warn)') : 'var(--color-neutral-600)',
+              }}
+            >
+              vs {fmtF(line.pvActuel)} F
+            </div>
+          )}
         </div>
 
         <div style={{ ...cell, color: priced && pvLive ? 'var(--color-neutral-300)' : 'var(--color-neutral-800)' }}>
@@ -264,7 +281,6 @@ export function WorkRow({
           {priced && pvLive && line.pvActuel > 0 && (
             <div
               className="num"
-              title={`PV actuel Médiciel : ${fmtF(line.pvActuel)} F`}
               style={{
                 fontSize: 10,
                 marginTop: 2,
