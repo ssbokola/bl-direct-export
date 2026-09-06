@@ -26,7 +26,7 @@ export function WorkTable({ rows, paLive, pvLive, firstVisible, onScroll, childr
       <div style={{ overflowX: 'auto', borderRadius: 'var(--radius-lg)' }}>
         <div
           style={{
-            minWidth: 1020,
+            minWidth: 1088,
             borderRadius: 'var(--radius-lg)',
             background: 'var(--color-surface)',
             boxShadow: 'var(--shadow-sm)',
@@ -100,7 +100,9 @@ export function WorkRow({
   pv,
   overridden,
   onSelect,
-  onAction,
+  onConfirm,
+  onToggleSearch,
+  onRestore,
   onPv,
   children,
 }) {
@@ -275,55 +277,69 @@ export function WorkRow({
           )}
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          {step === 2 && (
-            <button
-              onClick={onAction}
-              style={{
-                padding: '3px 9px',
-                borderRadius: 'var(--radius-sm)',
-                fontFamily: 'inherit',
-                fontSize: 11.5,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                background: 'transparent',
-                border: `1px solid ${attention ? meta.fg : 'var(--color-divider)'}`,
-                color: attention ? meta.fg : 'var(--color-neutral-300)',
-              }}
-            >
-              <span>
-                {excluded
-                  ? 'Rétablir'
-                  : isExpanded
-                    ? 'Fermer'
-                    : line.status === 'warning'
-                      ? 'Confirmer'
-                      : line.med
-                        ? 'Modifier'
-                        : 'Rechercher'}
-              </span>
-              {/* La pastille Entrée n'apparaît que sur la ligne sélectionnée —
-                  partout, elle serait du bruit sur 120 lignes. */}
-              {isSelected && (
-                <span
-                  style={{
-                    marginLeft: 5,
-                    padding: '0 4px',
-                    borderRadius: 3,
-                    fontSize: 10,
-                    background: 'color-mix(in srgb, var(--color-text) 12%, transparent)',
-                    color: 'var(--color-neutral-300)',
-                  }}
-                >
-                  ↵
-                </span>
-              )}
-            </button>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+          {step === 2 && excluded && (
+            <ActionButton onClick={onRestore} attention={attention} meta={meta}>
+              Rétablir
+            </ActionButton>
+          )}
+          {step === 2 && !excluded && line.status === 'warning' && !isExpanded && (
+            <ActionButton onClick={onConfirm} attention={attention} meta={meta}>
+              Confirmer
+            </ActionButton>
+          )}
+          {step === 2 && !excluded && (
+            <ActionButton onClick={onToggleSearch} attention={!isExpanded && attention} meta={meta} showEnter={isSelected}>
+              {isExpanded ? 'Fermer' : line.status === 'warning' || line.med ? 'Modifier' : 'Rechercher'}
+            </ActionButton>
           )}
         </div>
       </div>
 
       {children}
     </div>
+  )
+}
+
+/** Petit bouton d'action de ligne — factorisé car une ligne "À vérifier" en
+ * affiche deux côte à côte (Confirmer + Modifier) : le geste "accepter la
+ * proposition automatique" ne doit jamais être le seul possible sur un
+ * appariement de basse confiance. */
+function ActionButton({ onClick, attention, meta, showEnter, children }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '3px 9px',
+        borderRadius: 'var(--radius-sm)',
+        fontFamily: 'inherit',
+        fontSize: 11.5,
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+        background: 'transparent',
+        border: `1px solid ${attention ? meta.fg : 'var(--color-divider)'}`,
+        color: attention ? meta.fg : 'var(--color-neutral-300)',
+        display: 'flex',
+        alignItems: 'center',
+      }}
+    >
+      <span>{children}</span>
+      {/* La pastille Entrée n'apparaît que sur la ligne sélectionnée —
+          partout, elle serait du bruit sur 120 lignes. */}
+      {showEnter && (
+        <span
+          style={{
+            marginLeft: 5,
+            padding: '0 4px',
+            borderRadius: 3,
+            fontSize: 10,
+            background: 'color-mix(in srgb, var(--color-text) 12%, transparent)',
+            color: 'var(--color-neutral-300)',
+          }}
+        >
+          ↵
+        </span>
+      )}
+    </button>
   )
 }

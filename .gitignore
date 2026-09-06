@@ -29,3 +29,6 @@ dist-ssr
 # Local secrets (Supabase keys)
 .env
 .env.local
+
+.vercel
+.env*

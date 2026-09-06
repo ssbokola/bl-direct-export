@@ -282,14 +282,12 @@ export default function BlSession({
                 overridden={ws.overrides[line.idx] !== undefined}
                 onSelect={() => ws.setSelected(line.idx)}
                 onPv={(v) => ws.setPv(line.idx, v)}
-                onAction={() => {
-                  if (line.status === 'excluded') ws.restore(line.idx)
-                  else if (line.status === 'warning' && ws.expanded !== line.idx) ws.confirm(line.idx)
-                  else {
-                    ws.setSelected(line.idx)
-                    ws.setExpanded(ws.expanded === line.idx ? null : line.idx)
-                    setQuery('')
-                  }
+                onRestore={() => ws.restore(line.idx)}
+                onConfirm={() => ws.confirm(line.idx)}
+                onToggleSearch={() => {
+                  ws.setSelected(line.idx)
+                  ws.setExpanded(ws.expanded === line.idx ? null : line.idx)
+                  setQuery('')
                 }}
               >
                 {ws.expanded === line.idx && (
