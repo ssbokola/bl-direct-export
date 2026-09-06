@@ -1,17 +1,14 @@
-import { useState, useCallback, useMemo } from 'react'
-import SideRail from './components/SideRail.jsx'
-import AppHeader from './components/AppHeader.jsx'
-import HomeScreen from './components/HomeScreen.jsx'
-import Step1Import from './components/Step1Import.jsx'
-import Step2Matching from './components/Step2Matching.jsx'
-import Step3Conversion from './components/Step3Conversion.jsx'
-import Step4Validation from './components/Step4Validation.jsx'
-import Step5Export from './components/Step5Export.jsx'
-import { loadTaux, saveTaux, loadCoefficient, saveCoefficient } from './utils/settings.js'
+import { useCallback, useState } from 'react'
+import BlSession from './components/BlSession.jsx'
+import { ArchiveScreen } from './components/ExportScreen.jsx'
+import { HomeScreen } from './components/HomeScreen.jsx'
+import ImportScreen from './components/ImportScreen.jsx'
+import { fmtF } from './blConstants.js'
+import { useTheme } from './useTheme.js'
+import { addHistoryEntry, loadHistory } from './utils/history.js'
+import { buildWorkspaceLines } from './workspaceAdapters.js'
 
-// BL-specific fields, reset whenever the user finishes or starts a new BL.
-// tauxEurCfa/coefficient are persisted app settings and are kept across runs.
-function makeInitialData() {
+function makeInitialImportData() {
   return {
     pdfFile: null,
     excelFile: null,
@@ -23,109 +20,140 @@ function makeInitialData() {
     source: '',
     supplierName: '',
     matches: [],
-    totalFrais: 0,
-    fraisParUnite: 0,
-    tauxEurCfa: loadTaux(),
-    coefficient: loadCoefficient(),
-    convertedProducts: [],
-    validatedPrices: [],
   }
 }
 
+/**
+ * L'assemblage racine : accueil (sans BL en cours), import (Step1Import,
+ * inchangé), puis une session de BL (BlSession, qui porte tout le plan de
+ * travail y compris son propre onglet "accueil" — voir BlSession.jsx).
+ *
+ * Remise à zéro entre deux BL : `workData` repasse à `null` et `sessionId`
+ * est incrémenté à chaque nouvel import complété ET à chaque fin d'export
+ * — `key={sessionId}` sur <BlSession> force alors un remontage complet, donc
+ * une réinitialisation complète de useBlWorkspace, sans état résiduel du BL
+ * précédent (le bug corrigé le 06/09/2026, ici assuré structurellement par
+ * React plutôt que par un resetBl() à maintenir à la main).
+ */
 export default function App() {
-  const [screen, setScreen] = useState('home')
-  const [maxStep, setMaxStep] = useState(1)
-  const [data, setData] = useState(makeInitialData)
+  const { isLight, toggle } = useTheme()
+  const [screen, setScreen] = useState('landing') // 'landing' | 'import' | 'bl' | 'archive'
+  const [importData, setImportData] = useState(makeInitialImportData)
+  const [workData, setWorkData] = useState(null)
+  const [sessionId, setSessionId] = useState(0)
+  const [history, setHistory] = useState(loadHistory)
+  const [viewing, setViewing] = useState(null)
+  const [compare, setCompare] = useState([])
 
-  const updateData = useCallback((updates) => {
-    setData(prev => ({ ...prev, ...updates }))
+  const updateImportData = useCallback((patch) => setImportData((d) => ({ ...d, ...patch })), [])
+
+  const goToImport = useCallback(() => {
+    setImportData(makeInitialImportData())
+    setWorkData(null)
+    setScreen('import')
   }, [])
 
-  const handleTauxChange = useCallback((taux) => {
-    saveTaux(taux)
-    setData(prev => ({ ...prev, tauxEurCfa: taux }))
-  }, [])
+  const beginMatching = useCallback(async () => {
+    const lines = await buildWorkspaceLines(importData.blProducts, importData.medicielProducts)
+    setWorkData({
+      lines,
+      medicielProducts: importData.medicielProducts,
+      supplierName: importData.source === 'direct-export' ? 'Direct Export' : (importData.supplierName || 'Officine France'),
+      invoiceNumber: importData.invoiceNumber,
+      blNumber: importData.blNumber,
+    })
+    setSessionId((id) => id + 1)
+    setScreen('bl')
+  }, [importData])
 
-  const handleCoefficientChange = useCallback((coefficient) => {
-    saveCoefficient(coefficient)
-    setData(prev => ({ ...prev, coefficient }))
-  }, [])
-
-  const goToStep = useCallback((step) => {
-    setScreen(step)
-    if (typeof step === 'number') setMaxStep(m => Math.max(m, step))
-  }, [])
-
-  const goNext = useCallback(() => {
-    setScreen(s => {
-      const next = Math.min((typeof s === 'number' ? s : 0) + 1, 5)
-      setMaxStep(m => Math.max(m, next))
-      return next
+  const toggleCompare = useCallback((id) => {
+    setCompare((c) => {
+      if (c.includes(id)) return c.filter((x) => x !== id)
+      return c.length >= 2 ? [c[1], id] : c.concat(id)
     })
   }, [])
 
-  const goPrev = useCallback(() => {
-    setScreen(s => (typeof s === 'number' && s > 1 ? s - 1 : 'home'))
+  const finishSession = useCallback((summary) => {
+    setHistory((h) => addHistoryEntry(h, summary))
+    setWorkData(null)
+    setImportData(makeInitialImportData())
+    setScreen('landing')
   }, [])
 
-  const canNavigate = useCallback((target) => {
-    if (target === 'home') return true
-    return target <= maxStep
-  }, [maxStep])
+  if (screen === 'archive' && viewing) {
+    const bl = history.find((h) => h.id === viewing)
+    if (bl) {
+      const marge = bl.pv > 0 ? ((bl.pv - bl.pa) / bl.pv) * 100 : 0
+      return (
+        <ArchiveScreen
+          isLight={isLight}
+          bl={bl}
+          filename={`FACTURE-YOP-${bl.facture || 'SANS-REF'}.xlsx`}
+          recap={[
+            { label: 'Fournisseur', value: bl.supplier },
+            { label: 'N° facture', value: bl.facture || '—' },
+            { label: 'Exporté le', value: bl.date },
+            { label: 'Lignes exportées', value: String(bl.lignes - bl.exclues) },
+            { label: 'Lignes exclues', value: String(bl.exclues) },
+            { label: 'Montant BL', value: `${bl.eur.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €` },
+            { label: 'Total achat', value: `${fmtF(bl.pa)} F` },
+            { label: 'Total vente', value: `${fmtF(bl.pv)} F` },
+            { label: 'Marge', value: `${marge.toFixed(1)} %` },
+            { label: 'Taux · coeff', value: `${fmtF(bl.taux)} · ×${bl.coeff.toFixed(2).replace('.', ',')}` },
+          ]}
+          onClose={() => { setScreen('landing'); setViewing(null) }}
+        />
+      )
+    }
+  }
 
-  // Clears the current BL so the next run of Step 1..5 doesn't inherit
-  // stale products/matches/prices — called before leaving a finished BL
-  // (onFinish) and before starting a new one from Home (onStart).
-  const resetBl = useCallback(() => {
-    setData(makeInitialData())
-    setMaxStep(1)
-  }, [])
-
-  // Lines still needing a decision — surfaced as a badge on the rail.
-  const attentionCount = useMemo(
-    () => (data.matches || []).filter(m => !m.match && m.status !== 'excluded').length,
-    [data.matches]
-  )
-
-  const screens = {
-    home: (
-      <HomeScreen
-        data={data}
-        resumeStep={maxStep}
-        onResume={() => goToStep(maxStep)}
-        onStart={() => { resetBl(); goToStep(1) }}
+  if (screen === 'import') {
+    return (
+      <ImportScreen
+        isLight={isLight}
+        onToggleTheme={toggle}
+        onHome={() => setScreen('landing')}
+        data={importData}
+        onUpdate={updateImportData}
+        onNext={beginMatching}
       />
-    ),
-    1: <Step1Import data={data} onUpdate={updateData} onNext={goNext} />,
-    2: <Step2Matching data={data} onUpdate={updateData} onNext={goNext} onPrev={goPrev} />,
-    3: <Step3Conversion data={data} onUpdate={updateData} onNext={goNext} onPrev={goPrev} />,
-    4: <Step4Validation data={data} onUpdate={updateData} onNext={goNext} onPrev={goPrev} />,
-    5: <Step5Export data={data} onPrev={goPrev} onFinish={() => { resetBl(); goToStep('home') }} />,
+    )
+  }
+
+  if (screen === 'bl' && workData) {
+    return (
+      <BlSession
+        key={sessionId}
+        isLight={isLight}
+        toggleTheme={toggle}
+        lines={workData.lines}
+        medicielProducts={workData.medicielProducts}
+        supplierName={workData.supplierName}
+        invoiceNumber={workData.invoiceNumber}
+        blNumber={workData.blNumber}
+        history={history}
+        compare={compare}
+        onToggleCompare={toggleCompare}
+        onClearCompare={() => setCompare([])}
+        onOpenArchive={(id) => { setViewing(id); setScreen('archive') }}
+        onExitToImport={goToImport}
+        onFullExit={finishSession}
+      />
+    )
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-app text-ink">
-      <SideRail
-        screen={screen}
-        onNavigate={goToStep}
-        canNavigate={canNavigate}
-        attentionCount={attentionCount}
-      />
-
-      <div className="flex-1 min-w-0 flex flex-col">
-        <AppHeader
-          screen={screen}
-          data={data}
-          onTauxChange={handleTauxChange}
-          onCoefficientChange={handleCoefficientChange}
-        />
-
-        <main className="flex-1 overflow-y-auto px-6 pt-6 pb-10">
-          <div className="max-w-[1180px] mx-auto" key={String(screen)}>
-            {screens[screen]}
-          </div>
-        </main>
-      </div>
-    </div>
+    <HomeScreen
+      isLight={isLight}
+      onToggleTheme={toggle}
+      current={null}
+      onResume={goToImport}
+      onStart={goToImport}
+      history={history}
+      compare={compare}
+      onToggleCompare={toggleCompare}
+      onClearCompare={() => setCompare([])}
+      onOpenArchive={(id) => { setViewing(id); setScreen('archive') }}
+    />
   )
 }

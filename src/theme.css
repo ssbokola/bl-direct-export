@@ -1,0 +1,134 @@
+/* BL France — thèmes de la refonte.
+ *
+ * Deux grounds retenus : Ardoise en sombre, Nuit verte en clair.
+ * L'accent Nocturne (#9184d9 en sombre, #5d5294 en clair) et les couleurs
+ * d'alerte (ambre « à vérifier », rosé « absent ») ne changent pas d'un
+ * thème à l'autre : seuls les fonds et les rampes neutres basculent.
+ *
+ * Usage : importé une fois dans main.jsx ; useTheme.js pose data-theme sur
+ * <html>. Le reste de l'app (écran d'import, Step1Import) reste en Tailwind —
+ * les deux systèmes cohabitent, celui-ci ne redéfinit que le workspace.
+ */
+
+:root,
+[data-theme='dark'] {
+  /* Ardoise — graphite légèrement chaud */
+  --color-bg: #17181a;
+  --color-surface: #212225;
+  --color-text: #e8e8e6;
+  --color-divider: color-mix(in srgb, #e8e8e6 16%, transparent);
+
+  --color-neutral-100: #e8e8e6;
+  --color-neutral-200: #cbcbc8;
+  --color-neutral-300: #a5a5a1;
+  --color-neutral-400: #82827e;
+  --color-neutral-500: #63635f;
+  --color-neutral-600: #494946;
+  --color-neutral-700: #343433;
+  --color-neutral-800: #262627;
+  --color-neutral-900: #212225;
+
+  --color-accent: #9184d9;
+  --color-accent-100: #f5f4ff;
+  --color-accent-200: #e7e5fe;
+  --color-accent-300: #d2cefd;
+  --color-accent-400: #b5abfc;
+  --color-accent-500: #968ae0;
+  --color-accent-600: #796cbf;
+  --color-accent-700: #5d5294;
+  --color-accent-800: #423a6a;
+  --color-accent-900: #2b2741;
+
+  /* États d'alerte — versions claires, lisibles sur fond sombre */
+  --color-warn: #dcb684;
+  --color-warn-bg: #3a3020;
+  --color-error: #d9948f;
+  --color-error-bg: #3a2422;
+
+  /* Fonds opaques des barres collantes : un fond translucide laisserait
+     passer les lignes qui défilent dessous. */
+  --sticky-head: #212225;
+  --sticky-banner: #262218;
+
+  --shadow-sm: 0 0 0 1px #303032;
+  --shadow-md: 0 0 0 1px #343433, 0 6px 18px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 0 0 1px #494946, 0 16px 40px rgba(0, 0, 0, 0.18);
+}
+
+[data-theme='light'] {
+  /* Nuit verte — voile vert-sarcelle, en écho au vert Kemet */
+  --color-bg: #e2eae8;
+  --color-surface: #f2f7f6;
+  --color-text: #202a28;
+  --color-divider: color-mix(in srgb, #202a28 16%, transparent);
+
+  --color-neutral-100: #202a28;
+  --color-neutral-200: #35423f;
+  --color-neutral-300: #4f5f5c;
+  --color-neutral-400: #6f807d;
+  --color-neutral-500: #8fa09d;
+  --color-neutral-600: #aebebb;
+  --color-neutral-700: #cbd8d5;
+  --color-neutral-800: #e2eae8;
+  --color-neutral-900: #f2f7f6;
+
+  --color-accent: #5d5294;
+  --color-accent-100: #2b2741;
+  --color-accent-200: #423a6a;
+  --color-accent-300: #5d5294;
+  --color-accent-400: #796cbf;
+  --color-accent-500: #968ae0;
+  --color-accent-600: #b5abfc;
+  --color-accent-700: #d2cefd;
+  --color-accent-800: #e7e5fe;
+  --color-accent-900: #f5f4ff;
+
+  /* Mêmes rôles, versions foncées pour tenir sur fond clair */
+  --color-warn: #7a5510;
+  --color-warn-bg: #f2e4c8;
+  --color-error: #8f3830;
+  --color-error-bg: #f6dcd8;
+
+  --sticky-head: #eaf1ef;
+  --sticky-banner: #f1ecd9;
+
+  --shadow-sm: 0 0 0 1px #cbd8d5;
+  --shadow-md: 0 0 0 1px #aebebb, 0 6px 18px rgba(32, 42, 40, 0.12);
+  --shadow-lg: 0 0 0 1px #8fa09d, 0 16px 40px rgba(32, 42, 40, 0.18);
+}
+
+:root {
+  --font-heading: 'Inter', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 11px;
+}
+
+/* Chiffres alignés partout où l'on compare des colonnes */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.ell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+@keyframes rowIn {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
