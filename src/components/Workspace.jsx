@@ -773,6 +773,9 @@ export function WorkHeader({ ws, onExitToImport }) {
         <h4 className="ell" style={{ margin: 0, fontSize: 19, fontWeight: 500, minWidth: 0, flex: 1 }}>
           {STEPS[ws.step].title}
         </h4>
+        <div className="num" style={{ fontSize: 13, color: 'var(--color-neutral-400)', flex: 'none' }}>
+          Montant BL <span style={{ color: 'var(--color-text)' }}>{fmtEur(ws.totals.totalEur)}</span>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 'none' }}>
           <SecondaryButton onClick={() => ws.prev(onExitToImport)}>← {prevLabel}</SecondaryButton>
           <PrimaryButton onClick={ws.next} disabled={disabled}>

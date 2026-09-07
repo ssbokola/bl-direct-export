@@ -3,7 +3,7 @@ import { CommandPalette } from './CommandPalette'
 import { usePaletteShortcut } from '../usePaletteShortcut'
 import { ExportScreen } from './ExportScreen'
 import { HomeScreen } from './HomeScreen'
-import { fmtF } from '../blConstants'
+import { fmtEur, fmtF } from '../blConstants'
 import { useBlWorkspace } from '../useBlWorkspace'
 import { downloadExport } from '../workspaceAdapters.js'
 import { AutoAcceptBanner, ResumeBanner, StepHint } from '../uxAdditions.jsx'
@@ -178,6 +178,7 @@ export default function BlSession({
     () => [
       { label: 'Fournisseur', value: supplierName },
       { label: 'Lignes exportées', value: String(exportRows.length) },
+      { label: 'Montant BL', value: fmtEur(ws.totals.totalEur) },
       { label: 'Total achat', value: `${fmtF(ws.totals.totalPA)} F` },
       { label: 'Total vente', value: `${fmtF(ws.totals.totalPV)} F` },
       { label: 'Marge globale', value: `${ws.totals.marge.toFixed(1)} %` },
