@@ -252,10 +252,21 @@ export function useBlWorkspace(initialLines) {
   const paLive = step >= 3 && taux !== null
   const pvLive = step >= 4 && taux !== null
 
+  // Un filtre choisi pendant le tri (ex. "Appariées auto") peut se vider tout
+  // seul ensuite — acceptAuto() bascule justement tout "auto" vers
+  // "validated" en un geste. Sans ce filet, la vue reste bloquée sur une
+  // catégorie à 0 ligne : table blanche, sans explication, au retour sur
+  // l'étape Matching. Retombe sur "Tout" dès que la catégorie choisie est
+  // vide, plutôt que d'exposer un vide muet.
+  const effectiveFilter = useMemo(
+    () => (filter === 'all' || lines.some((l) => l.status === filter) ? filter : 'all'),
+    [filter, lines],
+  )
+
   const visible = useMemo(() => {
-    if (filter === 'all') return lines
-    return lines.filter((l) => l.status === filter)
-  }, [lines, filter])
+    if (effectiveFilter === 'all') return lines
+    return lines.filter((l) => l.status === effectiveFilter)
+  }, [lines, effectiveFilter])
 
   // Si la ligne sélectionnée sort de la vue filtrée, retombe sur la première
   // ligne visible plutôt que de laisser `selected` pointer sur une ligne
@@ -273,7 +284,7 @@ export function useBlWorkspace(initialLines) {
     lines,
     step,
     maxStep,
-    filter,
+    filter: effectiveFilter,
     selected: effectiveSelected,
     expanded,
     taux,
