@@ -1,4 +1,4 @@
-import { autoMatch } from './utils/matching.js'
+import { autoMatch, matchOrderToDelivery } from './utils/matching.js'
 import { syncMatchMemory } from './utils/settings.js'
 import { generateXlsxBlob, downloadXlsx } from './utils/csvGenerator.js'
 
@@ -13,11 +13,15 @@ import { generateXlsxBlob, downloadXlsx } from './utils/csvGenerator.js'
  * officineParser.js compute a per-line confidence score today, so the
  * "relecture du scan" step (see useBlWorkspace.js) stays dormant rather than
  * fabricate one.
+ *
+ * `orderLines` (facultatif) vient d'orderParser.js — le bon de commande de
+ * la même livraison, déposé à l'import. Sans lui, le comportement est
+ * inchangé (aucune ligne n'a `hasOrderDoc`).
  */
-export async function buildWorkspaceLines(blProducts, medicielProducts) {
+export async function buildWorkspaceLines(blProducts, medicielProducts, orderLines) {
   const memory = await syncMatchMemory()
   const matches = autoMatch(blProducts, medicielProducts, memory)
-  return matches.map(({ blProduct, match, score, status }, idx) => ({
+  const lines = matches.map(({ blProduct, match, score, status }, idx) => ({
     idx,
     cip: blProduct.cip,
     label: blProduct.designation,
@@ -33,6 +37,34 @@ export async function buildWorkspaceLines(blProducts, medicielProducts) {
     tva: match?.tva || '',
     motif: null,
   }))
+  return applyRuptureFacts(lines, orderLines)
+}
+
+/**
+ * Rapproche le bon de commande (s'il y en a un) des lignes du BL déjà
+ * appariées au catalogue Médiciel, et marque chaque ligne : ce qui a été
+ * commandé (`qtyCommandee`), si elle est en rupture (livré < commandé), et
+ * si un BC couvrait cette ligne du tout (`hasOrderDoc` — une ligne du BL
+ * absente du BC n'est pas "en rupture", elle est simplement hors sujet du
+ * BC, ex. une substitution que le fournisseur a proposée).
+ */
+function applyRuptureFacts(lines, orderLines) {
+  if (!orderLines?.length) {
+    return lines.map((l) => ({ ...l, qtyCommandee: null, enRupture: false, hasOrderDoc: false }))
+  }
+  const matches = matchOrderToDelivery(orderLines, lines)
+  const qtyCommandeeByIdx = new Map(
+    matches.filter((m) => m.workspaceLine).map((m) => [m.workspaceLine.idx, m.orderLine.qtyCommandee]),
+  )
+  return lines.map((l) => {
+    const qtyCommandee = qtyCommandeeByIdx.get(l.idx)
+    if (qtyCommandee === undefined) {
+      return { ...l, qtyCommandee: null, enRupture: false, hasOrderDoc: false }
+    }
+    const enRupture = qtyCommandee > l.qty
+    const tauxRupturePct = enRupture ? Math.round(((qtyCommandee - l.qty) / qtyCommandee) * 1000) / 10 : 0
+    return { ...l, qtyCommandee, enRupture, hasOrderDoc: true, tauxRupturePct }
+  })
 }
 
 /**

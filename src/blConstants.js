@@ -43,13 +43,16 @@ export const FILTERS = [
 
 /**
  * Grille de la table de travail — partagée par l'en-tête et les lignes.
+ * PA (achat pur) et PRT (achat + part des frais) sont deux colonnes
+ * distinctes côte à côte — l'appli conflait les deux sous "PA" jusqu'ici,
+ * le PV et la marge se basent sur le PRT (coût complet), pas le PA seul.
  * La dernière colonne (152px) doit rester assez large pour deux boutons
  * côte à côte : une ligne "À vérifier" affiche "Confirmer" ET "Modifier",
  * pas l'un ou l'autre — accepter la proposition automatique ne doit jamais
  * être le seul geste possible sur un appariement de basse confiance.
  */
 export const GRID =
-  '26px minmax(0,1.3fr) 34px minmax(0,1.25fr) 36px 76px 84px 88px 62px 152px'
+  '26px minmax(0,1.3fr) 34px minmax(0,1.25fr) 36px 76px 84px 84px 88px 62px 152px'
 
 export const fmtF = (n) => Math.round(n || 0).toLocaleString('fr-FR')
 

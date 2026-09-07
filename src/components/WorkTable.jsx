@@ -26,7 +26,7 @@ export function WorkTable({ rows, paLive, pvLive, firstVisible, onScroll, childr
       <div style={{ overflowX: 'auto', borderRadius: 'var(--radius-lg)' }}>
         <div
           style={{
-            minWidth: 1088,
+            minWidth: 1172,
             borderRadius: 'var(--radius-lg)',
             background: 'var(--color-surface)',
             boxShadow: 'var(--shadow-sm)',
@@ -59,6 +59,9 @@ export function WorkTable({ rows, paLive, pvLive, firstVisible, onScroll, childr
             <div>Statut</div>
             <div style={{ textAlign: 'right', color: paLive ? 'var(--color-neutral-500)' : ghost.color }}>
               PA FCFA
+            </div>
+            <div style={{ textAlign: 'right', color: paLive ? 'var(--color-neutral-500)' : ghost.color }}>
+              PRT FCFA
             </div>
             <div style={{ textAlign: 'right', color: pvLive ? 'var(--color-neutral-500)' : ghost.color }}>
               PV
@@ -114,7 +117,7 @@ export function WorkRow({
   // Écart au prix de vente actuel : au-delà de 10 %, la ligne se signale.
   const ecart = line.pvActuel > 0 && pv > 0 ? ((pv - line.pvActuel) / line.pvActuel) * 100 : 0
   const drift = pvLive && Math.abs(ecart) > 10
-  const margeLine = pv > 0 && priced ? (1 - priced.pa / pv) * 100 : 0
+  const margeLine = pv > 0 && priced ? (1 - priced.prt / pv) * 100 : 0
 
   let tint = { boxShadow: rule }
   if (attention && step === 2) {
@@ -174,6 +177,11 @@ export function WorkRow({
                   line.qtyOrdered !== line.qty ? `${line.qty}/${line.qtyOrdered}` : line.qty
                 } u · ${fmtEur(line.eur)}`}
           </div>
+          {line.hasOrderDoc && line.enRupture && (
+            <div className="num" style={{ fontSize: 10.5, color: 'var(--color-error)', marginTop: 2 }}>
+              Rupture — {line.qtyCommandee} commandés, {line.qty} livrés
+            </div>
+          )}
         </div>
 
         <div style={{ textAlign: 'center' }}>
@@ -227,6 +235,10 @@ export function WorkRow({
 
         <div style={{ ...cell, color: priced && paLive ? 'var(--color-neutral-200)' : 'var(--color-neutral-800)' }}>
           {priced && paLive ? fmtF(priced.pa) : '—'}
+        </div>
+
+        <div style={{ ...cell, color: priced && paLive ? 'var(--color-neutral-300)' : 'var(--color-neutral-800)' }}>
+          {priced && paLive ? fmtF(priced.prt) : '—'}
         </div>
 
         <div

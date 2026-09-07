@@ -3,6 +3,7 @@ import BlSession from './components/BlSession.jsx'
 import { ArchiveScreen } from './components/ExportScreen.jsx'
 import { HomeScreen } from './components/HomeScreen.jsx'
 import ImportScreen from './components/ImportScreen.jsx'
+import { SupplierReliability } from './components/SupplierReliability.jsx'
 import { fmtF } from './blConstants.js'
 import { addHistoryEntry, loadHistory } from './utils/history.js'
 import { buildWorkspaceLines } from './workspaceAdapters.js'
@@ -11,10 +12,14 @@ function makeInitialImportData() {
   return {
     pdfFile: null,
     excelFile: null,
+    orderFile: null,
     blProducts: [],
     medicielProducts: [],
+    orderLines: null,
     invoiceNumber: '',
     orderNumber: '',
+    bcOrderNumber: '',
+    bcOrderDate: '',
     blNumber: '',
     source: '',
     supplierName: '',
@@ -52,12 +57,14 @@ export default function App() {
   }, [])
 
   const beginMatching = useCallback(async () => {
-    const lines = await buildWorkspaceLines(importData.blProducts, importData.medicielProducts)
+    const lines = await buildWorkspaceLines(importData.blProducts, importData.medicielProducts, importData.orderLines)
     setWorkData({
       lines,
       medicielProducts: importData.medicielProducts,
-      supplierName: importData.source === 'direct-export' ? 'Direct Export' : (importData.supplierName || 'Officine France'),
+      supplierName: importData.supplierName || 'Fournisseur non renseigné',
+      supplierSource: importData.source,
       invoiceNumber: importData.invoiceNumber,
+      orderNumber: importData.orderNumber,
       blNumber: importData.blNumber,
     })
     setSessionId((id) => id + 1)
@@ -104,6 +111,10 @@ export default function App() {
     }
   }
 
+  if (screen === 'suppliers') {
+    return <SupplierReliability onClose={() => setScreen('landing')} />
+  }
+
   if (screen === 'import') {
     return (
       <ImportScreen
@@ -122,7 +133,9 @@ export default function App() {
         lines={workData.lines}
         medicielProducts={workData.medicielProducts}
         supplierName={workData.supplierName}
+        supplierSource={workData.supplierSource}
         invoiceNumber={workData.invoiceNumber}
+        orderNumber={workData.orderNumber}
         blNumber={workData.blNumber}
         history={history}
         compare={compare}
@@ -145,6 +158,7 @@ export default function App() {
       onToggleCompare={toggleCompare}
       onClearCompare={() => setCompare([])}
       onOpenArchive={(id) => { setViewing(id); setScreen('archive') }}
+      onOpenSuppliers={() => setScreen('suppliers')}
     />
   )
 }

@@ -329,7 +329,7 @@ function railSide(n, ws) {
       tone: ws.remaining > 0 ? 'var(--color-warn)' : 'var(--color-accent-300)',
     }
   }
-  if (n === 3) return { text: ws.paLive ? `${fmtF(ws.totals.totalPA)} F` : '—', tone: grey }
+  if (n === 3) return { text: ws.paLive ? `${fmtF(ws.totals.totalPRT)} F` : '—', tone: grey }
   if (n === 4) return { text: ws.pvLive ? `${ws.totals.marge.toFixed(0)} %` : '—', tone: grey }
   return { text: ws.maxStep >= 5 ? 'prêt' : '—', tone: grey }
 }
@@ -473,10 +473,10 @@ function StepControls({ n, ws, pending }) {
         />
         <Summary
           rows={[
-            ['Marchandise', ws.paLive ? `${fmtF(ws.totals.marchandise)} F` : '—'],
+            ['Total PA', ws.paLive ? `${fmtF(ws.totals.totalPA)} F` : '—'],
             ['Frais', `${fmtF(ws.fraisTotal)} F`],
           ]}
-          total={['Coût de revient', ws.paLive ? `${fmtF(ws.totals.marchandise + ws.fraisTotal)} F` : '—']}
+          total={['Total PRT', ws.paLive ? `${fmtF(ws.totals.totalPRT)} F` : '—']}
         />
       </div>
     )
@@ -495,6 +495,7 @@ function StepControls({ n, ws, pending }) {
         <Summary
           rows={[
             ['Total PA', `${fmtF(ws.totals.totalPA)} F`],
+            ['Total PRT', `${fmtF(ws.totals.totalPRT)} F`],
             ['Total PV', `${fmtF(ws.totals.totalPV)} F`],
           ]}
           total={['Marge globale', `${ws.totals.marge.toFixed(1)} %`]}

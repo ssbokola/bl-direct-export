@@ -209,21 +209,28 @@ export function useBlWorkspace(initialLines) {
     [lines],
   )
 
-  /** Prix d'achat en FCFA : conversion + frais répartis au prorata. Le taux
-   * absent compte pour 0 (voir hasPrices ci-dessous, qui décide seul de ce
-   * que la vue affiche — jamais ce calcul). */
+  /** Prix d'achat (PA, pur — la conversion seule) et prix de revient (PRT,
+   * PA + part des frais répartie au prorata de la valeur de chaque ligne) :
+   * deux notions distinctes que l'appli conflait jusqu'ici sous le seul nom
+   * "pa" (qui contenait en réalité déjà les frais). Le PV et la marge se
+   * basent sur le PRT — c'est le coût complet, pas le seul prix d'achat —
+   * mais les deux totaux doivent rester visibles et distincts pour juger
+   * l'un sans l'autre. Le taux absent compte pour 0 (voir hasPrices
+   * ci-dessous, qui décide seul de ce que la vue affiche — jamais ce calcul).
+   */
   const priced = useMemo(() => {
     const totalEur = retained.reduce((a, l) => a + l.eur * l.qty, 0)
     return retained.map((l) => {
       const ligne = l.eur * l.qty
       const fraisUnit = totalEur > 0 && l.qty > 0 ? (fraisTotal * (ligne / totalEur)) / l.qty : 0
-      return { ...l, pa: l.eur * (taux || 0) + fraisUnit, fraisUnit }
+      const pa = l.eur * (taux || 0)
+      return { ...l, pa, prt: pa + fraisUnit, fraisUnit }
     })
   }, [retained, taux, fraisTotal])
 
   const pvOf = useCallback(
     (row) =>
-      overrides[row.idx] !== undefined ? overrides[row.idx] : roundUp5(row.pa * coefficient),
+      overrides[row.idx] !== undefined ? overrides[row.idx] : roundUp5(row.prt * coefficient),
     [overrides, coefficient],
   )
 
@@ -233,6 +240,7 @@ export function useBlWorkspace(initialLines) {
 
   const totals = useMemo(() => {
     const totalPA = priced.reduce((a, p) => a + p.pa * p.qty, 0)
+    const totalPRT = priced.reduce((a, p) => a + p.prt * p.qty, 0)
     const totalPV = priced.reduce((a, p) => a + pvOf(p) * p.qty, 0)
     const totalEur = lines
       .filter((l) => l.status !== 'excluded')
@@ -240,11 +248,11 @@ export function useBlWorkspace(initialLines) {
     return {
       totalEur,
       totalPA,
+      totalPRT,
       totalPV,
-      marchandise: totalEur * (taux || 0),
-      marge: totalPV > 0 ? ((totalPV - totalPA) / totalPV) * 100 : 0,
+      marge: totalPV > 0 ? ((totalPV - totalPRT) / totalPV) * 100 : 0,
     }
-  }, [priced, pvOf, lines, taux])
+  }, [priced, pvOf, lines])
 
   // Sans taux connu, un PA/PV n'est pas un prix — juste la part de frais.
   // La vue s'appuie sur ce seul indicateur pour décider quoi afficher, plutôt

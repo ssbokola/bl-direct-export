@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useMemo } from 'react'
 import { parseBLPdf } from '../utils/pdfParser.js'
 import { parseOfficinePdf } from '../utils/officineParser.js'
 import { parseMedicielExcel } from '../utils/excelParser.js'
+import { parseOrderFile } from '../utils/orderParser.js'
 import { buildSearchIndex, searchMediciel } from '../utils/matching.js'
 
 const SOURCES = [
@@ -334,6 +335,7 @@ const LINES_GRID = '28px minmax(0,1.3fr) 106px 48px 66px 80px 90px minmax(0,220p
 export default function Step1Import({ data, onUpdate, onNext }) {
   const [pdfLoading, setPdfLoading] = useState(false)
   const [excelLoading, setExcelLoading] = useState(false)
+  const [orderLoading, setOrderLoading] = useState(false)
   const [ocrProgress, setOcrProgress] = useState(null)
   const [errors, setErrors] = useState({})
   const [showManualForm, setShowManualForm] = useState(false)
@@ -387,13 +389,33 @@ export default function Step1Import({ data, onUpdate, onNext }) {
         orderNumber: result.orderNumber,
         blNumber: result.blNumber,
         ...(source === 'officine-france' && result.supplierName ? { supplierName: result.supplierName } : {}),
+        // Direct Export n'a pas de vrai nom aujourd'hui (juste la chaîne
+        // "Direct Export") — une devinette best-effort pré-remplit le champ
+        // manuel plutôt que de le laisser vide, sans jamais écraser une
+        // saisie déjà faite.
+        ...(source === 'direct-export' && !data.supplierName && result.supplierNameGuess
+          ? { supplierName: result.supplierNameGuess }
+          : {}),
       })
     } catch (err) {
       setErrors(e => ({ ...e, pdf: `Erreur de lecture PDF : ${err.message}` }))
     }
     setPdfLoading(false)
     setOcrProgress(null)
-  }, [onUpdate, source])
+  }, [onUpdate, source, data.supplierName])
+
+  const handleOrder = useCallback(async (file) => {
+    if (!file) return
+    setErrors(e => ({ ...e, order: null }))
+    setOrderLoading(true)
+    try {
+      const result = await parseOrderFile(file)
+      onUpdate({ orderFile: file, orderLines: result.lines, bcOrderNumber: result.orderNumber, bcOrderDate: result.orderDate })
+    } catch (err) {
+      setErrors(e => ({ ...e, order: err.message }))
+    }
+    setOrderLoading(false)
+  }, [onUpdate])
 
   const handleExcel = useCallback(async (file) => {
     if (!file) return
@@ -446,7 +468,6 @@ export default function Step1Import({ data, onUpdate, onNext }) {
   const canProceed = pdfOk && excelOk
 
   const detected = [
-    ['Fournisseur', source === 'direct-export' ? 'Direct Export' : (data.supplierName || '—')],
     ['N° facture', data.invoiceNumber || '—'],
     ['N° commande', data.orderNumber || '—'],
     ['N° BL', data.blNumber || '—'],
@@ -514,7 +535,7 @@ export default function Step1Import({ data, onUpdate, onNext }) {
         </div>
       ) : (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
             <FileCard
               title="BL fournisseur — PDF"
               kind="PDF"
@@ -540,10 +561,36 @@ export default function Step1Import({ data, onUpdate, onNext }) {
               )}
               {pdfOk && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: 'var(--color-divider)', border: '1px solid var(--color-divider)', marginTop: 12 }}>
+                  <div style={{ background: 'var(--color-neutral-900)', padding: '8px 10px' }}>
+                    <div style={{ fontSize: 10, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--color-neutral-500)' }}>
+                      Fournisseur
+                    </div>
+                    {source === 'direct-export' ? (
+                      <input
+                        type="text"
+                        value={data.supplierName || ''}
+                        onChange={(e) => onUpdate({ supplierName: e.target.value })}
+                        placeholder="à saisir — pas toujours lisible"
+                        style={{
+                          width: '100%',
+                          marginTop: 2,
+                          padding: 0,
+                          border: 0,
+                          borderBottom: '1px dashed var(--color-neutral-600)',
+                          background: 'transparent',
+                          color: 'var(--color-text)',
+                          fontFamily: 'inherit',
+                          fontSize: 13,
+                        }}
+                      />
+                    ) : (
+                      <div className="ell" style={{ fontSize: 13, marginTop: 2 }}>{data.supplierName || 'Officine France'}</div>
+                    )}
+                  </div>
                   {detected.map(([label, value]) => (
                     <div key={label} style={{ background: 'var(--color-neutral-900)', padding: '8px 10px' }}>
                       <div style={{ fontSize: 10, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--color-neutral-500)' }}>{label}</div>
-                      <div className={label === 'Fournisseur' ? 'ell' : 'num ell'} style={{ fontSize: 13, marginTop: 2 }}>
+                      <div className="num ell" style={{ fontSize: 13, marginTop: 2 }}>
                         {value}
                       </div>
                     </div>
@@ -568,6 +615,26 @@ export default function Step1Import({ data, onUpdate, onNext }) {
               <div style={{ marginTop: 12, padding: 10, background: 'var(--color-neutral-900)', border: '1px solid var(--color-divider)', fontSize: 12.5, color: 'var(--color-neutral-300)', lineHeight: 1.5 }}>
                 Export <strong style={{ color: 'var(--color-text)' }}>État du stock</strong> de Médiciel, en-têtes à la ligne 8.
                 Les produits déjà appariés lors des BL précédents seront reconnus automatiquement.
+              </div>
+            </FileCard>
+
+            <FileCard
+              title="Bon de commande — optionnel"
+              kind="BC"
+              kindTone="var(--color-warn)"
+              accept=".pdf,.xlsx,.xls"
+              loading={orderLoading}
+              loadingLabel="Lecture du bon de commande…"
+              file={data.orderFile}
+              count={data.orderLines?.length || 0}
+              countLabel="lignes commandées"
+              error={errors.order}
+              onFile={handleOrder}
+            >
+              <div style={{ marginTop: 12, padding: 10, background: 'var(--color-neutral-900)', border: '1px solid var(--color-divider)', fontSize: 12.5, color: 'var(--color-neutral-300)', lineHeight: 1.5 }}>
+                {data.orderLines?.length
+                  ? `Commande ${data.bcOrderNumber ? `N° ${data.bcOrderNumber} ` : ''}${data.bcOrderDate ? `du ${data.bcOrderDate}` : ''} — sert à faire ressortir les ruptures (commandé mais pas livré) sur ce BL.`
+                  : "Le document envoyé au fournisseur avant ce BL. Sans lui, l'appli ne sait pas distinguer une rupture d'une simple substitution."}
               </div>
             </FileCard>
           </div>

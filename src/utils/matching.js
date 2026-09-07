@@ -270,6 +270,62 @@ function matchOne(blProduct, normalizedInternals) {
 }
 
 /**
+ * Rapproche un bon de commande (BC) des lignes déjà appariées d'un BL, pour
+ * faire ressortir les ruptures (commandé mais pas — ou pas assez — livré).
+ *
+ * Le "code" d'une ligne de BC (quand le format le fournit — l'export PDF
+ * natif Médiciel, voir orderParser.js) EST un code Médiciel : le même
+ * espace que `line.code` une fois la ligne du BL appariée au catalogue —
+ * PAS le même espace que `line.cip` (le code-barres du fournisseur). D'où
+ * l'ordre : code exact d'abord (fiable), libellé flou en repli (BC sans
+ * code, ou ligne du BL non appariée au catalogue Médiciel).
+ *
+ * `workspaceLines` doit déjà être passé par autoMatch() — voir
+ * workspaceAdapters.js. Une ligne du BL n'est jamais rapprochée de deux
+ * lignes de BC différentes (`used`), pour ne pas doubler une rupture par
+ * erreur de correspondance floue.
+ *
+ * Retourne un tableau { orderLine, workspaceLine, matched } — une entrée
+ * par ligne du BC ; `workspaceLine` vaut `null` si rien ne correspond dans
+ * le BL (rupture totale : commandé, jamais livré sur ce BL).
+ */
+export function matchOrderToDelivery(orderLines, workspaceLines) {
+  const byCode = new Map(
+    workspaceLines.filter((l) => l.code).map((l) => [String(l.code), l]),
+  )
+  const normalizedLines = workspaceLines.map((l) => ({
+    line: l,
+    normalized: normalizeLabel(l.label || ''),
+  }))
+  const used = new Set()
+
+  return orderLines.map((orderLine) => {
+    const byCodeMatch = orderLine.code ? byCode.get(String(orderLine.code)) : null
+    if (byCodeMatch && !used.has(byCodeMatch.idx)) {
+      used.add(byCodeMatch.idx)
+      return { orderLine, workspaceLine: byCodeMatch, matched: true }
+    }
+
+    const orderNorm = normalizeLabel(orderLine.designation)
+    let best = null
+    let bestScore = 0
+    for (const { line, normalized } of normalizedLines) {
+      if (used.has(line.idx)) continue
+      const score = computeScore(orderNorm, normalized)
+      if (score > bestScore) {
+        bestScore = score
+        best = line
+      }
+    }
+    if (best && bestScore >= 0.5) {
+      used.add(best.idx)
+      return { orderLine, workspaceLine: best, matched: true }
+    }
+    return { orderLine, workspaceLine: null, matched: false }
+  })
+}
+
+/**
  * Search Médiciel products for autocomplete.
  */
 export function searchMediciel(fuse, query, limit = 10) {

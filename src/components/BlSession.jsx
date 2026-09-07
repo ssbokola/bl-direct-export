@@ -6,6 +6,7 @@ import { HomeScreen } from './HomeScreen'
 import { fmtEur, fmtF } from '../blConstants'
 import { useBlWorkspace } from '../useBlWorkspace'
 import { downloadExport } from '../workspaceAdapters.js'
+import { writeBlFacts } from '../utils/supplierStats.js'
 import { AutoAcceptBanner, ResumeBanner, StepHint } from '../uxAdditions.jsx'
 import { useAwayDetection } from '../useAwayDetection.js'
 import { scrollToRow } from '../scrollToRow.js'
@@ -30,7 +31,9 @@ export default function BlSession({
   lines,
   medicielProducts,
   supplierName,
+  supplierSource,
   invoiceNumber,
+  orderNumber,
   blNumber,
   history,
   compare,
@@ -165,7 +168,10 @@ export default function BlSession({
         produit: p.med,
         cmd: p.qtyOrdered,
         livre: p.qty,
-        pa: p.pa,
+        // Le fichier Médiciel attend un coût complet (PRT), pas le PA seul —
+        // comportement inchangé depuis avant la distinction PA/PRT, où "pa"
+        // désignait déjà cette valeur.
+        pa: p.prt,
         pv: ws.pvOf(p),
         tva: p.tva,
       })),
@@ -177,14 +183,44 @@ export default function BlSession({
   const buildRecap = useCallback(
     () => [
       { label: 'Fournisseur', value: supplierName },
+      { label: 'N° commande', value: orderNumber || '—' },
       { label: 'Lignes exportées', value: String(exportRows.length) },
       { label: 'Montant BL', value: fmtEur(ws.totals.totalEur) },
-      { label: 'Total achat', value: `${fmtF(ws.totals.totalPA)} F` },
+      { label: 'Total PA', value: `${fmtF(ws.totals.totalPA)} F` },
+      { label: 'Total PRT', value: `${fmtF(ws.totals.totalPRT)} F` },
       { label: 'Total vente', value: `${fmtF(ws.totals.totalPV)} F` },
       { label: 'Marge globale', value: `${ws.totals.marge.toFixed(1)} %` },
       { label: 'Taux · coeff', value: `${fmtF(ws.taux)} · ×${ws.coefficient.toFixed(2).replace('.', ',')}` },
     ],
-    [supplierName, exportRows.length, ws.totals, ws.taux, ws.coefficient],
+    [supplierName, orderNumber, exportRows.length, ws.totals, ws.taux, ws.coefficient],
+  )
+
+  // Une ligne par produit livré, pas un résumé — voir supplierStats.js. Le
+  // même point que la ligne d'historique locale : la fin de l'export, seul
+  // moment où prix, rupture et fournisseur sont tous confirmés.
+  const buildBlFacts = useCallback(
+    () => {
+      const blReference = invoiceNumber || blNumber || 'SANS-REF'
+      return ws.priced.map((p) => ({
+        bl_reference: blReference,
+        supplier_name: supplierName,
+        supplier_source: supplierSource || null,
+        order_number: orderNumber || null,
+        cip: p.cip,
+        code_mediciel: p.code,
+        designation: p.med || p.label,
+        qty_commandee: p.qtyCommandee,
+        qty_livree: p.qty,
+        has_order_doc: p.hasOrderDoc,
+        en_rupture: p.enRupture,
+        taux_rupture_pct: p.tauxRupturePct || null,
+        prix_achat_eur: p.eur,
+        prix_achat_fcfa: p.pa,
+        prix_vente_fcfa: ws.pvOf(p),
+        taux_change: ws.taux,
+      }))
+    },
+    [ws, invoiceNumber, blNumber, supplierName, supplierSource, orderNumber],
   )
 
   // — L'export prend tout l'écran dès qu'on l'atteint, quel que soit l'onglet interne.
@@ -197,26 +233,27 @@ export default function BlSession({
         excluded={excludedLines}
         recap={buildRecap()}
         filename={filename}
-        fileMeta={`${exportRows.reduce((a, r) => a + r.livre, 0)} unités · ${fmtF(ws.totals.totalPA)} F d'achat`}
+        fileMeta={`${exportRows.reduce((a, r) => a + r.livre, 0)} unités · ${fmtF(ws.totals.totalPRT)} F de coût de revient`}
         downloaded={downloaded}
         onDownload={() => {
-          downloadExport(exportRows, invoiceNumber, blNumber, filename)
+          downloadExport(exportRows, invoiceNumber, orderNumber, filename)
           setDownloaded(true)
         }}
         onBack={() => ws.go(4)}
-        onFinish={() =>
+        onFinish={() => {
+          writeBlFacts(buildBlFacts())
           onFullExit({
             supplier: supplierName,
             facture: invoiceNumber,
             lignes: ws.lines.length,
             exclues: excludedLines.length,
             eur: ws.totals.totalEur,
-            pa: ws.totals.totalPA,
+            pa: ws.totals.totalPRT,
             pv: ws.totals.totalPV,
             taux: ws.taux,
             coeff: ws.coefficient,
           })
-        }
+        }}
       />
     )
   }

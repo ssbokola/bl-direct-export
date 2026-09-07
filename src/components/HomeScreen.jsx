@@ -16,6 +16,7 @@ export function HomeScreen({
   onToggleCompare,
   onClearCompare,
   onOpenArchive,
+  onOpenSuppliers,
 }) {
   const kicker = {
     fontSize: 10,
@@ -35,6 +36,9 @@ export function HomeScreen({
               Kemet Services · Ph. Saint Clément
             </div>
           </div>
+          {onOpenSuppliers && (
+            <SecondaryButton onClick={onOpenSuppliers}>Fiabilité fournisseurs →</SecondaryButton>
+          )}
         </header>
 
         <h2 style={{ margin: '0 0 8px', fontSize: 30, fontWeight: 500 }}>Bons de livraison France</h2>

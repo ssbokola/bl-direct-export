@@ -43,6 +43,7 @@ export async function parseBLPdf(file) {
   const orderNumber = extractOrderNumber(fullText) || extractFieldByXY(allItems, /commande/i)
   const blNumber = extractBlNumber(fullText) || extractFieldByXY(allItems, /livraison/i)
   const headerCosts = parseHeaderCosts(fullText)
+  const supplierNameGuess = guessSupplierName(textLines)
 
   // Find all CIP/EAN anchor items (CIP13 3400xxx, EAN13, EAN12, or any 7-13 digit barcode)
   // Strategy: first look for single items, then try merging adjacent numeric items
@@ -116,7 +117,29 @@ export async function parseBLPdf(file) {
 
   console.log(`🔍 PDF Debug: ${products.length} products extracted`)
 
-  return { invoiceNumber, orderNumber, blNumber, products, headerCosts }
+  return { invoiceNumber, orderNumber, blNumber, products, headerCosts, supplierNameGuess }
+}
+
+/**
+ * Devine le nom du fournisseur "Direct Export" — best-effort, jamais
+ * bloquant : ce chemin n'a aujourd'hui aucun vrai nom (contrairement à
+ * "Officine France", où le scan porte déjà l'en-tête du tiers). Repli sur
+ * la saisie manuelle si rien de fiable n'est trouvé — voir Step1Import.jsx.
+ * Heuristique : la première ligne de texte en haut de page qui n'est ni un
+ * mot-clé de document (FACTURE/COMMANDE/CLIENT…) ni purement numérique.
+ */
+function guessSupplierName(textLines) {
+  const skip = /facture|commande|client|livraison|bon\s+de|adresse|siret|tva|r[ée]f[ée]rence|page\s+\d/i
+  for (const line of textLines.slice(0, 8)) {
+    const trimmed = line.trim()
+    if (trimmed.length < 3 || trimmed.length > 60) continue
+    if (skip.test(trimmed)) continue
+    if (/^\d+$/.test(trimmed)) continue
+    const letterCount = (trimmed.match(/[A-Za-zÀ-ÿ]/g) || []).length
+    if (letterCount < 3) continue
+    return trimmed
+  }
+  return ''
 }
 
 /**
