@@ -285,6 +285,18 @@ export default function Step1Import({ data, onUpdate, onNext }) {
     onUpdate({ blProducts: (data.blProducts || []).filter((_, i) => i !== idx), matches: [] })
   }, [data.blProducts, onUpdate])
 
+  // Une quantité ou un prix mal lus par l'OCR (ou une coquille du PDF natif)
+  // n'avaient jusqu'ici aucun correctif : la seule option en aval était
+  // d'exclure la ligne entière au matching, perdant le produit plutôt que
+  // de corriger la valeur. Éditable ici, avant que le matching et les prix
+  // ne s'appuient dessus.
+  const handleEditProduct = useCallback((idx, field, value) => {
+    onUpdate({
+      blProducts: (data.blProducts || []).map((p, i) => (i === idx ? { ...p, [field]: value } : p)),
+      matches: [],
+    })
+  }, [data.blProducts, onUpdate])
+
   const pdfOk = data.blProducts?.length > 0 && !errors.pdf
   const excelOk = data.medicielProducts?.length > 0 && !errors.excel
   const canProceed = pdfOk && excelOk
@@ -423,10 +435,32 @@ export default function Step1Import({ data, onUpdate, onNext }) {
                       <span className="font-mono text-[11.5px] text-muted-200 w-6">{String(idx + 1).padStart(2, '0')}</span>
                       <div className="min-w-0">
                         <div className="text-[13px] font-medium truncate">{p.designation}</div>
-                        <div className="font-mono text-[11px] text-muted-300 mt-0.5">
-                          {String(p.cip).startsWith('MANUAL') ? 'Saisie manuelle' : `CIP ${p.cip}`}
-                          {' · '}{p.qtyDelivered} u · {p.priceEur.toFixed(2).replace('.', ',')} €
-                          {p.etat === 'A VERIFIER' && ' · à vérifier'}
+                        <div className="font-mono text-[11px] text-muted-300 mt-0.5 flex items-center gap-1">
+                          <span className="flex-none">
+                            {String(p.cip).startsWith('MANUAL') ? 'Saisie manuelle' : `CIP ${p.cip}`}
+                            {' · '}
+                          </span>
+                          <input
+                            type="number"
+                            min="0"
+                            key={`qty-${idx}`}
+                            defaultValue={p.qtyDelivered}
+                            onBlur={(e) => handleEditProduct(idx, 'qtyDelivered', parseInt(e.target.value, 10) || 0)}
+                            title="Corriger la quantité si mal lue"
+                            className="w-9 flex-none bg-transparent text-right border-b border-dashed border-transparent hover:border-line-strong focus:border-pharma-500 focus:outline-none"
+                          />
+                          <span className="flex-none">u ·</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            key={`price-${idx}`}
+                            defaultValue={p.priceEur}
+                            onBlur={(e) => handleEditProduct(idx, 'priceEur', parseFloat(e.target.value) || 0)}
+                            title="Corriger le prix d'achat si mal lu"
+                            className="w-14 flex-none bg-transparent text-right border-b border-dashed border-transparent hover:border-line-strong focus:border-pharma-500 focus:outline-none"
+                          />
+                          <span className="flex-none">€{p.etat === 'A VERIFIER' && ' · à vérifier'}</span>
                         </div>
                       </div>
                     </div>
