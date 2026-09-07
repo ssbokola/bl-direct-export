@@ -1,5 +1,5 @@
 import { fmtEur, fmtF } from '../blConstants'
-import { PrimaryButton, SecondaryButton, ThemeButton } from './HomeScreen'
+import { PrimaryButton, SecondaryButton } from './HomeScreen'
 
 /**
  * Étape 5 — l'export. Il prend tout l'écran : c'est un aboutissement, pas
@@ -12,8 +12,6 @@ import { PrimaryButton, SecondaryButton, ThemeButton } from './HomeScreen'
  * réel. Voir utils/csvGenerator.js.
  */
 export function ExportScreen({
-  isLight,
-  onToggleTheme,
   bl,
   rows,
   excluded,
@@ -42,7 +40,6 @@ export function ExportScreen({
             <div style={kicker}>Étape 5 sur 5</div>
             <div style={{ fontFamily: 'var(--font-heading)', fontSize: 15 }}>Export Médiciel</div>
           </div>
-          <ThemeButton isLight={isLight} onClick={onToggleTheme} />
           <SecondaryButton onClick={onBack}>← Validation</SecondaryButton>
           <SecondaryButton onClick={onFinish}>Traiter un autre BL</SecondaryButton>
         </header>
@@ -76,7 +73,7 @@ export function ExportScreen({
                   display: 'grid',
                   placeItems: 'center',
                   border: '1px solid var(--color-neutral-800)',
-                  borderRadius: 4,
+                  borderRadius: 0,
                   fontSize: 9.5,
                   color: 'var(--color-accent-300)',
                 }}
@@ -298,7 +295,7 @@ export function ArchiveScreen({ bl, recap, filename, onClose }) {
               display: 'grid',
               placeItems: 'center',
               border: '1px solid var(--color-neutral-800)',
-              borderRadius: 4,
+              borderRadius: 0,
               fontSize: 9.5,
               color: 'var(--color-accent-300)',
             }}

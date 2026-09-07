@@ -1,8 +1,160 @@
-import { FILTERS, STEPS, fmtF } from '../blConstants'
-import { PrimaryButton, SecondaryButton, ThemeButton } from './HomeScreen'
+import { FILTERS, STEPS, fmtEur, fmtF } from '../blConstants'
+import { PrimaryButton, SecondaryButton } from './HomeScreen'
 import { CommandsButton, ShortcutKey } from '../uxAdditions.jsx'
 
 const PENDING_CAP = 6
+
+/**
+ * Le panneau de décision — une ligne à la fois, à l'étape Matching.
+ *
+ * N'ajoute rien que la table ne sache déjà faire (confirmer/rechercher/
+ * exclure passent par les mêmes actions ws.*) : il ne fait que guider l'œil
+ * vers la prochaine décision plutôt que de le laisser chercher dans le
+ * registre. La table en dessous reste entièrement cliquable — rouvrir une
+ * ligne déjà tranchée (même auto-appariée) y reste possible, contrairement
+ * à la maquette d'origine où le registre est en lecture seule.
+ */
+export function DecisionPanel({ pending, activeIdx, onJump, onConfirm, onSearch, onExclude }) {
+  if (pending.length === 0) return null
+  const current = pending.find((l) => l.idx === activeIdx) || pending[0]
+  const position = pending.findIndex((l) => l.idx === current.idx) + 1
+  const severe = current.status === 'error' ? 'var(--color-error)' : 'var(--color-warn)'
+  const kicker = {
+    fontSize: 10,
+    letterSpacing: '.1em',
+    textTransform: 'uppercase',
+    color: 'var(--color-neutral-500)',
+    marginBottom: 7,
+  }
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div
+        className="blueprint"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr) 210px',
+          gap: 22,
+          padding: '18px 24px',
+          border: '1px solid var(--color-divider)',
+          background: 'var(--color-surface)',
+          boxShadow: `inset 3px 0 0 ${severe}`,
+        }}
+      >
+        <span className="corner tl" />
+        <span className="corner tr" />
+        <span className="corner bl" />
+        <span className="corner br" />
+
+        <div style={{ minWidth: 0 }}>
+          <div style={kicker}>
+            Décision {position} sur {pending.length}
+          </div>
+          <div className="ell" style={{ fontFamily: 'var(--font-heading)', fontSize: 18, fontWeight: 600 }}>
+            {current.label}
+          </div>
+          <div className="num" style={{ fontSize: 11.5, color: 'var(--color-neutral-400)', marginTop: 5 }}>
+            CIP {current.cip} · {current.qty} u · {fmtEur(current.eur)}
+          </div>
+        </div>
+
+        <div style={{ minWidth: 0 }}>
+          <div style={kicker}>
+            {current.med ? `Proposition Médiciel · score ${current.score} %` : 'Aucune correspondance'}
+          </div>
+          {current.med ? (
+            <>
+              <div className="ell" style={{ fontFamily: 'var(--font-heading)', fontSize: 16 }}>
+                {current.med}
+              </div>
+              <div className="num" style={{ fontSize: 11.5, color: 'var(--color-neutral-400)', marginTop: 5 }}>
+                {current.code}
+                {current.pvActuel > 0 ? ` · PV ${fmtF(current.pvActuel)} F` : ''}
+              </div>
+              <div style={{ height: 3, marginTop: 9, background: 'var(--color-neutral-800)' }}>
+                <div style={{ height: '100%', width: `${current.score}%`, background: severe }} />
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 12.5, color: 'var(--color-neutral-500)', fontStyle: 'italic', marginTop: 2 }}>
+              Rien d'assez proche — cherchez à la main ou excluez la ligne.
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {current.status === 'warning' && <PrimaryButton onClick={onConfirm}>Confirmer</PrimaryButton>}
+          <SecondaryButton onClick={onSearch}>Chercher un autre produit</SecondaryButton>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <GhostButton onClick={() => onExclude('Non référencé en officine')}>Non référencé</GhostButton>
+            <GhostButton onClick={() => onExclude('À créer dans Médiciel')}>À créer</GhostButton>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 6, marginTop: 10, overflowX: 'auto', paddingBottom: 2 }}>
+        {pending.map((l) => {
+          const active = l.idx === current.idx
+          return (
+            <button
+              key={l.idx}
+              onClick={() => onJump(l.idx)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                flex: 'none',
+                padding: '5px 10px',
+                border: `1px solid ${active ? 'var(--color-accent)' : 'var(--color-divider)'}`,
+                background: active ? 'color-mix(in srgb, var(--color-accent) 14%, transparent)' : 'transparent',
+                color: active ? 'var(--color-text)' : 'var(--color-neutral-400)',
+                fontFamily: 'inherit',
+                fontSize: 11.5,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  flex: 'none',
+                  background: l.status === 'error' ? 'var(--color-error)' : 'var(--color-warn)',
+                }}
+              />
+              <span className="num">{String(l.idx + 1).padStart(2, '0')}</span>
+              <span className="ell" style={{ maxWidth: 140 }}>
+                {l.label}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function GhostButton({ children, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        flex: 1,
+        padding: '5px 8px',
+        border: '1px solid var(--color-divider)',
+        background: 'transparent',
+        color: 'var(--color-neutral-400)',
+        fontFamily: 'inherit',
+        fontSize: 11,
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {children}
+    </button>
+  )
+}
 
 /**
  * Le rail latéral — les étapes 2 à 5 en accordéon.
@@ -11,7 +163,7 @@ const PENDING_CAP = 6
  * L'étape 1 (import) n'y figure pas : elle a déjà eu lieu sur l'écran
  * d'import (Step1Import.jsx) avant que ce plan de travail ne se monte.
  */
-export function SideRail({ ws, isLight, onToggleTheme, onHome, onExitToImport, onOpenPalette, pending, children }) {
+export function SideRail({ ws, onHome, onExitToImport, onOpenPalette, pending, children }) {
   const { step, maxStep } = ws
   const steps = [2, 3, 4, 5]
 
@@ -106,7 +258,6 @@ export function SideRail({ ws, isLight, onToggleTheme, onHome, onExitToImport, o
       >
         <div style={{ flex: 1, fontSize: 11.5, color: 'var(--color-neutral-500)' }}>Agent de saisie</div>
         <CommandsButton onClick={onOpenPalette} />
-        <ThemeButton isLight={isLight} onClick={onToggleTheme} />
       </div>
 
       {children}

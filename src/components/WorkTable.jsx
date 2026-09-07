@@ -347,7 +347,7 @@ function ActionButton({ onClick, attention, meta, showEnter, children }) {
           style={{
             marginLeft: 5,
             padding: '0 4px',
-            borderRadius: 3,
+            borderRadius: 0,
             fontSize: 10,
             background: 'color-mix(in srgb, var(--color-text) 12%, transparent)',
             color: 'var(--color-neutral-300)',

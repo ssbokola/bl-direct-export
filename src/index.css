@@ -1,77 +1,7 @@
-@import "tailwindcss";
-
-@theme {
-  /* Kemet green — primary action colour */
-  --color-pharma-50: #f6fbf7;
-  --color-pharma-100: #eaf5ed;
-  --color-pharma-200: #e9f5ec;
-  --color-pharma-300: #8bbf9c;
-  --color-pharma-400: #34a355;
-  --color-pharma-500: #26883d;
-  --color-pharma-600: #1f7033;
-  --color-pharma-700: #1a5c2b;
-  --color-pharma-800: #1a7a3c;
-  --color-pharma-900: #133d1e;
-
-  /* Surfaces */
-  --color-app: #f5f6f5;
-  --color-ink: #16221b;
-  --color-card: #ffffff;
-  --color-subtle: #fafbfa;
-  --color-subtle-2: #f8faf9;
-  --color-chip: #f2f5f2;
-
-  /* Lines */
-  --color-line: #e3e7e4;
-  --color-line-soft: #edf0ee;
-  --color-line-softer: #f0f2f1;
-  --color-line-input: #d7ded9;
-  --color-line-strong: #c2cdc5;
-  --color-line-dashed: #c9d3cc;
-
-  /* Muted text ramp */
-  --color-muted-700: #41544a;
-  --color-muted-600: #5c6d63;
-  --color-muted-500: #77877d;
-  --color-muted-400: #8b9a90;
-  --color-muted-300: #98a69d;
-  --color-muted-200: #a7b3ac;
-
-  /* Neutral fills */
-  --color-fill: #eceeed;
-  --color-fill-2: #e2e5e3;
-
-  /* Dark navigation rail */
-  --color-rail: #132018;
-  --color-rail-line: #23342a;
-  --color-rail-text: #c7d3ca;
-  --color-rail-bright: #e3ebe5;
-  --color-rail-muted: #9caea2;
-  --color-rail-dim: #7d8f83;
-  --color-rail-dimmer: #6f8377;
-  --color-rail-badge: #1d2f24;
-  --color-rail-badge-text: #8fa896;
-  --color-rail-active: #1e3128;
-
-  /* Status palette (matching / validation) */
-  --color-st-auto: #1a7a3c;
-  --color-st-auto-bg: #e9f5ec;
-  --color-st-seen: #1d4ed8;
-  --color-st-seen-bg: #eaf0fe;
-  --color-st-warn: #a15c07;
-  --color-st-warn-bg: #fdf3e2;
-  --color-st-error: #b42318;
-  --color-st-error-bg: #fdeceb;
-  --color-st-excluded: #6b7280;
-  --color-st-excluded-bg: #f0f1f0;
-
-  /* Attention accent (rail badge dot) */
-  --color-alert: #e8a76a;
-  --color-alert-bg: #3a2418;
-
-  --font-sans: 'IBM Plex Sans', Helvetica, Arial, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
-}
+/* Réinitialisations de base — l'app entière lit désormais theme.css, plus
+ * de second système de couleurs (Tailwind/vert Kemet a disparu avec la
+ * refonte : l'écran d'import était son dernier utilisateur).
+ */
 
 html, body, #root {
   height: 100%;
@@ -79,33 +9,44 @@ html, body, #root {
 
 body {
   margin: 0;
-  background: var(--color-app);
-  color: var(--color-ink);
-  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text);
   -webkit-font-smoothing: antialiased;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
-button, input, select, textarea { font: inherit; }
+button, input, select, textarea {
+  font: inherit;
+}
 
-a { color: var(--color-pharma-500); text-decoration: none; }
-a:hover { color: var(--color-pharma-700); text-decoration: underline; }
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
 
-/* Scrollbar — sits on the app background, not the card */
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: transparent; }
+/* Scrollbar — sur le fond de l'app, pas sur la carte */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
 ::-webkit-scrollbar-thumb {
-  background: #d3d8d4;
-  border-radius: 8px;
-  border: 3px solid var(--color-app);
+  background: var(--color-neutral-600);
+  border-radius: 0;
+  border: 3px solid var(--color-bg);
 }
-::-webkit-scrollbar-thumb:hover { background: #c2cdc5; }
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-neutral-500);
+}
 
-@keyframes rowIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: none; }
-}
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -115,23 +56,25 @@ a:hover { color: var(--color-pharma-700); text-decoration: underline; }
   50% { opacity: 0.7; }
 }
 
-.animate-row-in { animation: rowIn 0.16s ease both; }
-.animate-fade-in { animation: fadeIn 0.25s ease-out both; }
-.animate-pulse-soft { animation: pulse-soft 2s ease-in-out infinite; }
+.animate-fade-in {
+  animation: fadeIn 0.25s ease-out both;
+}
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
 
-/* Keyboard hint keys */
+/* Touches de raccourci clavier */
 .kbd {
-  font-family: var(--font-mono);
-  background: #fff;
-  border: 1px solid var(--color-line-input);
-  border-bottom-width: 2px;
-  border-radius: 5px;
+  font-family: var(--font-body);
+  background: var(--color-neutral-800);
+  border: 1px solid var(--color-divider);
+  border-radius: 0;
   padding: 1px 5px;
-  color: var(--color-muted-700);
+  color: var(--color-neutral-300);
 }
 
 input:focus, select:focus, textarea:focus {
   outline: none;
-  border-color: var(--color-pharma-400);
-  box-shadow: 0 0 0 3px rgb(38 136 61 / 0.12);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 25%, transparent);
 }

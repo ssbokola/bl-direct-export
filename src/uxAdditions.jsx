@@ -154,7 +154,7 @@ export function ShortcutKey({ children, dim }) {
       style={{
         marginLeft: 5,
         padding: '0 4px',
-        borderRadius: 3,
+        borderRadius: 0,
         fontSize: 10,
         background: 'color-mix(in srgb, var(--color-text) 12%, transparent)',
         color: dim ? 'var(--color-neutral-400)' : 'var(--color-neutral-300)',

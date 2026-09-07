@@ -9,23 +9,63 @@ const SOURCES = [
   { key: 'officine-france', label: 'Officine France', hint: 'BL/facture, scan accepté' },
 ]
 
+const fmtEur2 = (n) => (n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
 function formatSize(bytes) {
   if (!bytes) return ''
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} Ko`
   return `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} Mo`
 }
 
-function FileCard({ title, kind, accent, loading, loadingLabel, file, count, countLabel, error, accept, onFile, children }) {
+/** Un signalement calculé à partir des données déjà connues — jamais un
+ * score de confiance OCR par ligne : ocrEngine.js n'en calcule pas
+ * aujourd'hui (voir blConstants.js), l'inventer ici serait mentir. */
+function signalement(p) {
+  if (p.qtyOrdered !== p.qtyDelivered) {
+    return { text: `Livré ${p.qtyDelivered} sur ${p.qtyOrdered} commandés`, tone: 'var(--color-warn)' }
+  }
+  if (p.etat === 'A VERIFIER') {
+    return { text: 'Lecture incertaine — à vérifier', tone: 'var(--color-warn)' }
+  }
+  return null
+}
+
+function FileCard({ title, kind, kindTone, loading, loadingLabel, file, count, countLabel, error, accept, onFile, children }) {
   const [dragOver, setDragOver] = useState(false)
   const inputRef = useRef()
   const loaded = Boolean(file) && !error && !loading
 
   return (
-    <div className="bg-white border border-line rounded-[14px] p-5">
-      <div className="flex items-center justify-between mb-3.5">
-        <div className="text-[13px] font-semibold uppercase tracking-[.04em] text-muted-600">{title}</div>
+    <div
+      className="blueprint"
+      style={{
+        position: 'relative',
+        border: '1px solid var(--color-divider)',
+        background: 'var(--color-surface)',
+        padding: 18,
+      }}
+    >
+      <span className="corner tl" />
+      <span className="corner tr" />
+      <span className="corner bl" />
+      <span className="corner br" />
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-neutral-400)' }}>
+          {title}
+        </div>
         {loaded && (
-          <span className="text-[11.5px] font-semibold text-st-auto bg-st-auto-bg py-[3px] px-2.5 rounded-full">Lu</span>
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: 'var(--color-accent-100)',
+              background: 'var(--color-accent-800)',
+              padding: '2px 9px',
+            }}
+          >
+            Lu
+          </span>
         )}
       </div>
 
@@ -39,43 +79,73 @@ function FileCard({ title, kind, accent, loading, loadingLabel, file, count, cou
           if (f) onFile(f)
         }}
         onClick={() => !loading && inputRef.current?.click()}
-        className={`flex items-center gap-3 p-3 rounded-[10px] border cursor-pointer transition-colors
-          ${dragOver ? 'border-pharma-500 bg-pharma-50'
-            : loaded ? 'bg-subtle-2 border-line-soft hover:border-line-strong'
-            : 'border-dashed border-line-dashed bg-subtle-2 hover:border-pharma-500'}`}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          padding: 12,
+          border: `1px ${loaded ? 'solid' : 'dashed'} ${dragOver ? 'var(--color-accent)' : 'var(--color-divider)'}`,
+          background: dragOver ? 'color-mix(in srgb, var(--color-accent) 8%, transparent)' : 'var(--color-neutral-900)',
+          cursor: loading ? 'default' : 'pointer',
+        }}
       >
         <input
           ref={inputRef}
           type="file"
           accept={accept}
-          className="hidden"
+          style={{ display: 'none' }}
           onChange={(e) => e.target.files[0] && onFile(e.target.files[0])}
           disabled={loading}
         />
-        <div className={`w-9 h-11 flex-none rounded-[5px] bg-white border border-line-input flex items-center justify-center font-mono text-[9.5px] font-semibold ${accent}`}>
+        <div
+          style={{
+            width: 34,
+            height: 42,
+            flex: 'none',
+            display: 'grid',
+            placeItems: 'center',
+            border: '1px solid var(--color-neutral-700)',
+            background: 'var(--color-bg)',
+            fontFamily: 'var(--font-body)',
+            fontSize: 9.5,
+            fontWeight: 600,
+            color: kindTone,
+          }}
+        >
           {kind}
         </div>
-        <div className="min-w-0 flex-1">
+        <div style={{ minWidth: 0, flex: 1 }}>
           {loading ? (
-            <div className="text-[13px] text-pharma-600 font-medium animate-pulse-soft">{loadingLabel}</div>
+            <div className="animate-pulse-soft" style={{ fontSize: 13, color: 'var(--color-accent)', fontWeight: 500 }}>
+              {loadingLabel}
+            </div>
           ) : file ? (
             <>
-              <div className="text-[13px] font-medium truncate">{file.name}</div>
-              <div className="font-mono text-[11px] text-muted-300 mt-0.5">
+              <div className="ell" style={{ fontSize: 13 }}>{file.name}</div>
+              <div className="num" style={{ fontSize: 11, color: 'var(--color-neutral-400)', marginTop: 2 }}>
                 {formatSize(file.size)}{count > 0 ? ` · ${count.toLocaleString('fr-FR')} ${countLabel}` : ''}
               </div>
             </>
           ) : (
             <>
-              <div className="text-[13px] font-medium text-muted-600">Glissez le fichier ou cliquez</div>
-              <div className="text-[11px] text-muted-300 mt-0.5">{accept}</div>
+              <div style={{ fontSize: 13, color: 'var(--color-neutral-300)' }}>Glissez le fichier ou cliquez</div>
+              <div style={{ fontSize: 11, color: 'var(--color-neutral-500)', marginTop: 2 }}>{accept}</div>
             </>
           )}
         </div>
       </div>
 
       {error && (
-        <div className="mt-3 p-3 rounded-[10px] bg-st-error-bg border border-st-error/20 text-[12.5px] text-st-error">
+        <div
+          style={{
+            marginTop: 10,
+            padding: 10,
+            background: 'var(--color-error-bg)',
+            border: '1px solid color-mix(in srgb, var(--color-error) 40%, transparent)',
+            fontSize: 12.5,
+            color: 'var(--color-error)',
+          }}
+        >
           {error}
         </div>
       )}
@@ -124,18 +194,33 @@ function ManualProductForm({ onAdd, onCancel, medicielProducts }) {
     })
   }
 
+  const cell = {
+    padding: '7px 9px',
+    fontSize: 12.5,
+    border: '1px solid var(--color-divider)',
+    background: 'var(--color-bg)',
+    color: 'var(--color-text)',
+    fontFamily: 'var(--font-body)',
+  }
+
   return (
-    <form onSubmit={submit} className="mt-3 p-3.5 rounded-[11px] border border-line-soft bg-subtle">
-      <div className="text-[11px] uppercase tracking-[.05em] text-muted-400 mb-2.5">Ajouter une ligne manuellement</div>
-      <div className="grid grid-cols-[120px_minmax(0,1fr)_70px_90px] gap-2.5">
+    <form
+      onSubmit={submit}
+      style={{ marginTop: 10, padding: 14, border: '1px solid var(--color-divider)', background: 'var(--color-neutral-900)' }}
+    >
+      <div style={{ fontSize: 10.5, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--color-neutral-400)', marginBottom: 8 }}>
+        Ajouter une ligne oubliée par la lecture
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '120px minmax(0,1fr) 70px 90px', gap: 8 }}>
         <input
           type="text"
           value={form.cip}
           onChange={e => setForm(f => ({ ...f, cip: e.target.value }))}
           placeholder="CIP (option.)"
-          className="py-2 px-2.5 text-[12.5px] border border-line-input rounded-lg bg-white font-mono"
+          className="num"
+          style={cell}
         />
-        <div className="relative">
+        <div style={{ position: 'relative' }}>
           <input
             type="text"
             required
@@ -145,19 +230,42 @@ function ManualProductForm({ onAdd, onCancel, medicielProducts }) {
             onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
             placeholder="Désignation — tapez pour chercher dans Médiciel"
-            className="w-full py-2 px-2.5 text-[12.5px] border border-line-input rounded-lg bg-white"
+            style={{ ...cell, width: '100%' }}
           />
           {showSuggestions && suggestions.length > 0 && (
-            <div className="absolute z-20 mt-1 w-full border border-line-soft rounded-[10px] bg-white shadow-lg overflow-hidden max-h-52 overflow-y-auto">
+            <div
+              style={{
+                position: 'absolute',
+                zIndex: 20,
+                marginTop: 2,
+                width: '100%',
+                border: '1px solid var(--color-divider)',
+                background: 'var(--color-surface)',
+                boxShadow: 'var(--shadow-md)',
+                maxHeight: 208,
+                overflowY: 'auto',
+              }}
+            >
               {suggestions.map((s, i) => (
                 <button
                   key={i}
                   type="button"
                   onMouseDown={() => { setForm(f => ({ ...f, designation: s.item.produit })); setShowSuggestions(false) }}
-                  className="w-full text-left py-2 px-2.5 hover:bg-pharma-50 border-b border-line-softer last:border-0"
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '7px 9px',
+                    border: 0,
+                    borderBottom: '1px solid var(--color-divider)',
+                    background: 'transparent',
+                    color: 'var(--color-text)',
+                    fontFamily: 'inherit',
+                    cursor: 'pointer',
+                  }}
                 >
-                  <div className="text-[12.5px] font-medium truncate">{s.item.produit}</div>
-                  <div className="font-mono text-[10.5px] text-muted-300">Code {s.item.code}</div>
+                  <div className="ell" style={{ fontSize: 12.5 }}>{s.item.produit}</div>
+                  <div className="num" style={{ fontSize: 10.5, color: 'var(--color-neutral-400)' }}>Code {s.item.code}</div>
                 </button>
               ))}
             </div>
@@ -170,7 +278,8 @@ function ManualProductForm({ onAdd, onCancel, medicielProducts }) {
           value={form.qtyDelivered}
           onChange={e => setForm(f => ({ ...f, qtyDelivered: e.target.value }))}
           placeholder="Qté"
-          className="py-2 px-2.5 text-[12.5px] border border-line-input rounded-lg bg-white font-mono text-right"
+          className="num"
+          style={{ ...cell, textAlign: 'right' }}
         />
         <input
           type="number"
@@ -180,14 +289,39 @@ function ManualProductForm({ onAdd, onCancel, medicielProducts }) {
           value={form.priceEur}
           onChange={e => setForm(f => ({ ...f, priceEur: e.target.value }))}
           placeholder="PU €"
-          className="py-2 px-2.5 text-[12.5px] border border-line-input rounded-lg bg-white font-mono text-right"
+          className="num"
+          style={{ ...cell, textAlign: 'right' }}
         />
       </div>
-      <div className="flex items-center gap-2 mt-2.5">
-        <button type="submit" className="py-2 px-4 rounded-lg bg-pharma-500 text-white text-[12.5px] font-semibold hover:bg-pharma-600 transition-colors">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+        <button
+          type="submit"
+          style={{
+            padding: '7px 16px',
+            border: '1px solid var(--color-accent)',
+            background: 'transparent',
+            color: 'var(--color-accent)',
+            fontFamily: 'inherit',
+            fontSize: 12.5,
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
           Ajouter
         </button>
-        <button type="button" onClick={onCancel} className="py-2 px-4 rounded-lg border border-line bg-white text-[12.5px] font-medium text-muted-700 hover:border-line-strong transition-colors">
+        <button
+          type="button"
+          onClick={onCancel}
+          style={{
+            padding: '7px 16px',
+            border: '1px solid var(--color-divider)',
+            background: 'transparent',
+            color: 'var(--color-neutral-300)',
+            fontFamily: 'inherit',
+            fontSize: 12.5,
+            cursor: 'pointer',
+          }}
+        >
           Annuler
         </button>
       </div>
@@ -195,12 +329,19 @@ function ManualProductForm({ onAdd, onCancel, medicielProducts }) {
   )
 }
 
+const LINES_GRID = '28px minmax(0,1.3fr) 106px 48px 66px 80px 90px minmax(0,220px) 26px'
+
 export default function Step1Import({ data, onUpdate, onNext }) {
   const [pdfLoading, setPdfLoading] = useState(false)
   const [excelLoading, setExcelLoading] = useState(false)
   const [ocrProgress, setOcrProgress] = useState(null)
   const [errors, setErrors] = useState({})
   const [showManualForm, setShowManualForm] = useState(false)
+  // Total facture ressaisi à la main — comparé à la somme des lignes lues
+  // pour révéler une ligne manquée ou un prix mal lu. Volontairement local
+  // (pas dans `data`) : c'est une aide à la relecture, pas une donnée qui
+  // sert plus loin dans le matching ou le prix.
+  const [invoiceTotal, setInvoiceTotal] = useState('')
 
   const source = data.source
 
@@ -289,7 +430,10 @@ export default function Step1Import({ data, onUpdate, onNext }) {
   // n'avaient jusqu'ici aucun correctif : la seule option en aval était
   // d'exclure la ligne entière au matching, perdant le produit plutôt que
   // de corriger la valeur. Éditable ici, avant que le matching et les prix
-  // ne s'appuient dessus.
+  // ne s'appuient dessus. Validé au blur (pas à chaque frappe) : un champ
+  // contrôlé par une valeur numérique arrondie casse la saisie d'une
+  // décimale (le "." disparaît au re-rendu) — voir ManualProductForm, qui
+  // n'a jamais eu ce problème car son champ reste une chaîne locale.
   const handleEditProduct = useCallback((idx, field, value) => {
     onUpdate({
       blProducts: (data.blProducts || []).map((p, i) => (i === idx ? { ...p, [field]: value } : p)),
@@ -308,12 +452,29 @@ export default function Step1Import({ data, onUpdate, onNext }) {
     ['N° BL', data.blNumber || '—'],
   ]
 
+  const linesTotal = useMemo(
+    () => (data.blProducts || []).reduce((a, p) => a + p.qtyDelivered * p.priceEur, 0),
+    [data.blProducts],
+  )
+  const invoiceTotalNum = parseFloat(invoiceTotal.replace(',', '.'))
+  const hasInvoiceTotal = Number.isFinite(invoiceTotalNum) && invoiceTotalNum > 0
+  const ecart = hasInvoiceTotal ? linesTotal - invoiceTotalNum : 0
+  const ecartSevere = hasInvoiceTotal && Math.abs(ecart) > 0.01
+
+  const signalCount = (data.blProducts || []).filter((p) => signalement(p)).length
+
+  const kicker = {
+    fontSize: 10.5,
+    letterSpacing: '.06em',
+    textTransform: 'uppercase',
+    color: 'var(--color-neutral-400)',
+  }
+
   return (
     <div>
-      {/* Source selector */}
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <span className="text-[12.5px] text-muted-600">Source du bon de livraison :</span>
-        <div className="flex gap-1 p-1 bg-fill rounded-[11px]">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12.5, color: 'var(--color-neutral-300)' }}>Source du bon de livraison :</span>
+        <div style={{ display: 'flex', gap: 1, padding: 1, background: 'var(--color-neutral-900)', border: '1px solid var(--color-divider)' }}>
           {SOURCES.map(s => {
             const on = source === s.key
             return (
@@ -321,8 +482,16 @@ export default function Step1Import({ data, onUpdate, onNext }) {
                 key={s.key}
                 onClick={() => handleSourceChange(s.key)}
                 title={s.hint}
-                className={`py-[7px] px-[13px] rounded-lg text-[12.5px] font-medium transition-colors
-                  ${on ? 'bg-white text-ink shadow-[0_1px_3px_rgba(20,40,28,.10)]' : 'text-muted-600 hover:text-ink'}`}
+                style={{
+                  padding: '7px 14px',
+                  border: 0,
+                  background: on ? 'var(--color-accent-800)' : 'transparent',
+                  color: on ? 'var(--color-accent-100)' : 'var(--color-neutral-400)',
+                  fontFamily: 'inherit',
+                  fontSize: 12.5,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
               >
                 {s.label}
               </button>
@@ -330,26 +499,26 @@ export default function Step1Import({ data, onUpdate, onNext }) {
           })}
         </div>
         {source && (
-          <span className="text-[11.5px] text-muted-300">
+          <span style={{ fontSize: 11.5, color: 'var(--color-neutral-500)' }}>
             {SOURCES.find(s => s.key === source)?.hint}
           </span>
         )}
       </div>
 
       {!source ? (
-        <div className="bg-white border border-line rounded-[14px] py-12 text-center">
-          <div className="text-[15px] font-semibold">Choisissez d'abord la source</div>
-          <div className="text-[13px] text-muted-400 mt-1.5">
+        <div style={{ border: '1px solid var(--color-divider)', background: 'var(--color-surface)', padding: '48px 24px', textAlign: 'center' }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontSize: 17, fontWeight: 600 }}>Choisissez d'abord la source</div>
+          <div style={{ fontSize: 13, color: 'var(--color-neutral-400)', marginTop: 6 }}>
             La lecture d'un PDF natif et celle d'un scan ne suivent pas le même chemin.
           </div>
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-4">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <FileCard
               title="BL fournisseur — PDF"
               kind="PDF"
-              accent="text-st-error"
+              kindTone="var(--color-error)"
               accept=".pdf"
               loading={pdfLoading}
               loadingLabel={ocrProgress?.message || 'Lecture du PDF…'}
@@ -360,21 +529,21 @@ export default function Step1Import({ data, onUpdate, onNext }) {
               onFile={handlePdf}
             >
               {ocrProgress && pdfLoading && (
-                <div className="mt-3">
-                  <div className="h-1.5 rounded bg-fill overflow-hidden">
-                    <div className="h-full rounded bg-st-warn transition-[width] duration-500" style={{ width: `${ocrProgress.pct || 0}%` }} />
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ height: 5, background: 'var(--color-neutral-800)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', background: 'var(--color-warn)', width: `${ocrProgress.pct || 0}%`, transition: 'width .5s' }} />
                   </div>
-                  <p className="text-[11px] text-muted-400 mt-1.5">
+                  <p style={{ fontSize: 11, color: 'var(--color-neutral-400)', marginTop: 6 }}>
                     Reconnaissance optique — comptez 30 à 60 secondes par page.
                   </p>
                 </div>
               )}
               {pdfOk && (
-                <div className="grid grid-cols-2 gap-px bg-line-soft border border-line-soft rounded-[10px] overflow-hidden mt-3.5">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: 'var(--color-divider)', border: '1px solid var(--color-divider)', marginTop: 12 }}>
                   {detected.map(([label, value]) => (
-                    <div key={label} className="bg-white py-2.5 px-3">
-                      <div className="text-[10.5px] uppercase tracking-[.05em] text-muted-400">{label}</div>
-                      <div className={`text-[13px] font-medium mt-0.5 truncate ${label === 'Fournisseur' ? '' : 'font-mono'}`}>
+                    <div key={label} style={{ background: 'var(--color-neutral-900)', padding: '8px 10px' }}>
+                      <div style={{ fontSize: 10, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--color-neutral-500)' }}>{label}</div>
+                      <div className={label === 'Fournisseur' ? 'ell' : 'num ell'} style={{ fontSize: 13, marginTop: 2 }}>
                         {value}
                       </div>
                     </div>
@@ -386,7 +555,7 @@ export default function Step1Import({ data, onUpdate, onNext }) {
             <FileCard
               title="Base Médiciel — XLSX"
               kind="XLS"
-              accent="text-st-auto"
+              kindTone="var(--color-accent)"
               accept=".xlsx,.xls"
               loading={excelLoading}
               loadingLabel="Lecture de la base…"
@@ -396,50 +565,159 @@ export default function Step1Import({ data, onUpdate, onNext }) {
               error={errors.excel}
               onFile={handleExcel}
             >
-              <div className="mt-3.5 p-3 rounded-[10px] bg-subtle-2 border border-line-soft text-[12.5px] text-muted-600 leading-relaxed">
-                Export <strong className="text-ink">État du stock</strong> de Médiciel, en-têtes à la ligne 8.
+              <div style={{ marginTop: 12, padding: 10, background: 'var(--color-neutral-900)', border: '1px solid var(--color-divider)', fontSize: 12.5, color: 'var(--color-neutral-300)', lineHeight: 1.5 }}>
+                Export <strong style={{ color: 'var(--color-text)' }}>État du stock</strong> de Médiciel, en-têtes à la ligne 8.
                 Les produits déjà appariés lors des BL précédents seront reconnus automatiquement.
               </div>
             </FileCard>
           </div>
 
-          {/* Detected lines */}
           {pdfOk && (
-            <div className="bg-white border border-line rounded-[14px] mt-4 overflow-hidden">
-              <div className="flex items-center justify-between py-2.5 px-4 bg-subtle border-b border-line">
-                <div className="text-[13px] font-semibold text-muted-600">
-                  Lignes détectées ({data.blProducts.length})
+            <>
+              {/* Contrôle du total du BL — révèle une ligne manquée ou un prix mal
+                  lu qu'une relecture ligne à ligne pourrait ne pas voir. */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 24,
+                  marginTop: 16,
+                  padding: '12px 16px',
+                  border: '1px solid var(--color-divider)',
+                  borderLeft: `3px solid ${ecartSevere ? 'var(--color-error)' : 'var(--color-divider)'}`,
+                  background: 'var(--color-surface)',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div style={{ flex: 'none' }}>
+                  <div style={kicker}>Contrôle · total du BL</div>
+                  <div className="num" style={{ fontSize: 13, marginTop: 3 }}>
+                    {fmtEur2(linesTotal)} € <span style={{ color: 'var(--color-neutral-500)', fontWeight: 400 }}>lus sur {data.blProducts.length} ligne{data.blProducts.length > 1 ? 's' : ''}</span>
+                  </div>
                 </div>
-                <button
-                  onClick={() => setShowManualForm(v => !v)}
-                  className="py-1.5 px-3 rounded-[7px] border border-line bg-white text-xs font-medium text-muted-700 hover:border-pharma-500 hover:text-pharma-500 transition-colors"
-                >
-                  {showManualForm ? 'Fermer' : '+ Ajouter une ligne'}
-                </button>
-              </div>
-
-              {showManualForm && (
-                <div className="px-4 pb-1">
-                  <ManualProductForm
-                    onAdd={handleAddManual}
-                    onCancel={() => setShowManualForm(false)}
-                    medicielProducts={data.medicielProducts}
+                <div style={{ flex: 'none' }}>
+                  <label style={{ display: 'block', fontSize: 10, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--color-neutral-500)', marginBottom: 3 }}>
+                    Total facture — saisi à la main
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={invoiceTotal}
+                    onChange={(e) => setInvoiceTotal(e.target.value)}
+                    placeholder="ex. 889,73"
+                    className="num"
+                    style={{
+                      width: 120,
+                      padding: '5px 8px',
+                      border: '1px solid var(--color-divider)',
+                      background: 'var(--color-bg)',
+                      color: 'var(--color-text)',
+                      fontFamily: 'inherit',
+                      fontSize: 13,
+                      textAlign: 'right',
+                    }}
                   />
                 </div>
-              )}
+                {hasInvoiceTotal && (
+                  <div style={{ flex: 'none' }}>
+                    <div style={kicker}>Écart</div>
+                    <div className="num" style={{ fontSize: 15, fontWeight: 600, marginTop: 3, color: ecartSevere ? 'var(--color-error)' : 'var(--color-accent)' }}>
+                      {ecart > 0 ? '+' : ''}{fmtEur2(ecart)} €
+                    </div>
+                  </div>
+                )}
+                {ecartSevere && (
+                  <div style={{ flex: 1, minWidth: 220, fontSize: 12, color: 'var(--color-error)', lineHeight: 1.5 }}>
+                    Une ligne manquée ou un prix mal lu fausserait tous les prix en aval — vérifiez avant de lancer le matching.
+                  </div>
+                )}
+              </div>
 
-              <div className="max-h-72 overflow-y-auto">
-                {data.blProducts.map((p, idx) => (
-                  <div key={idx} className="flex items-center justify-between gap-3 py-2.5 px-4 border-b border-line-softer last:border-0">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="font-mono text-[11.5px] text-muted-200 w-6">{String(idx + 1).padStart(2, '0')}</span>
-                      <div className="min-w-0">
-                        <div className="text-[13px] font-medium truncate">{p.designation}</div>
-                        <div className="font-mono text-[11px] text-muted-300 mt-0.5 flex items-center gap-1">
-                          <span className="flex-none">
-                            {String(p.cip).startsWith('MANUAL') ? 'Saisie manuelle' : `CIP ${p.cip}`}
-                            {' · '}
-                          </span>
+              <div style={{ border: '1px solid var(--color-divider)', background: 'var(--color-surface)', marginTop: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 16px', background: 'var(--sticky-head)', borderBottom: '1px solid var(--color-divider)', flexWrap: 'wrap' }}>
+                  <div style={{ fontFamily: 'var(--font-heading)', fontSize: 13.5, fontWeight: 600 }}>
+                    Lignes lues sur le BL · {data.blProducts.length}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--color-neutral-400)' }}>
+                    {signalCount > 0
+                      ? `${signalCount} ligne${signalCount > 1 ? 's' : ''} signalée${signalCount > 1 ? 's' : ''} — corrigez ici, avant l'appariement`
+                      : "Une quantité ou un prix mal lus se corrigent ici, avant l'appariement"}
+                  </div>
+                  <button
+                    onClick={() => setShowManualForm(v => !v)}
+                    style={{
+                      padding: '6px 12px',
+                      border: '1px solid var(--color-divider)',
+                      background: 'transparent',
+                      color: 'var(--color-neutral-300)',
+                      fontFamily: 'inherit',
+                      fontSize: 11.5,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {showManualForm ? 'Fermer' : '+ Ajouter une ligne'}
+                  </button>
+                </div>
+
+                {showManualForm && (
+                  <div style={{ padding: '0 16px' }}>
+                    <ManualProductForm
+                      onAdd={handleAddManual}
+                      onCancel={() => setShowManualForm(false)}
+                      medicielProducts={data.medicielProducts}
+                    />
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: LINES_GRID,
+                    gap: 10,
+                    padding: '7px 16px',
+                    fontSize: 10,
+                    letterSpacing: '.06em',
+                    textTransform: 'uppercase',
+                    color: 'var(--color-neutral-500)',
+                    borderBottom: '1px solid var(--color-divider)',
+                  }}
+                >
+                  <div>#</div>
+                  <div>Désignation lue</div>
+                  <div>CIP</div>
+                  <div style={{ textAlign: 'right' }}>Cmd</div>
+                  <div style={{ textAlign: 'right' }}>Qté</div>
+                  <div style={{ textAlign: 'right' }}>PU €</div>
+                  <div style={{ textAlign: 'right' }}>Total €</div>
+                  <div>Signalement</div>
+                  <div />
+                </div>
+
+                <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+                  {data.blProducts.map((p, idx) => {
+                    const signal = signalement(p)
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: LINES_GRID,
+                          gap: 10,
+                          alignItems: 'center',
+                          padding: '6px 16px',
+                          fontSize: 12.5,
+                          borderBottom: '1px solid var(--color-divider)',
+                          background: signal ? `color-mix(in srgb, ${signal.tone} 7%, transparent)` : 'transparent',
+                          boxShadow: signal ? `inset 2px 0 0 ${signal.tone}` : 'none',
+                        }}
+                      >
+                        <div className="num" style={{ color: 'var(--color-neutral-500)' }}>{String(idx + 1).padStart(2, '0')}</div>
+                        <div className="ell">{p.designation}</div>
+                        <div className="num ell" style={{ fontSize: 11, color: 'var(--color-neutral-400)' }}>
+                          {String(p.cip).startsWith('MANUAL') ? 'Saisie manuelle' : p.cip}
+                        </div>
+                        <div className="num" style={{ textAlign: 'right', color: 'var(--color-neutral-400)' }}>{p.qtyOrdered}</div>
+                        <div style={{ textAlign: 'right' }}>
                           <input
                             type="number"
                             min="0"
@@ -447,9 +725,20 @@ export default function Step1Import({ data, onUpdate, onNext }) {
                             defaultValue={p.qtyDelivered}
                             onBlur={(e) => handleEditProduct(idx, 'qtyDelivered', parseInt(e.target.value, 10) || 0)}
                             title="Corriger la quantité si mal lue"
-                            className="w-9 flex-none bg-transparent text-right border-b border-dashed border-transparent hover:border-line-strong focus:border-pharma-500 focus:outline-none"
+                            className="num"
+                            style={{
+                              width: '100%',
+                              padding: '3px 6px',
+                              textAlign: 'right',
+                              background: 'var(--color-neutral-900)',
+                              border: '1px solid var(--color-divider)',
+                              color: 'var(--color-text)',
+                              fontFamily: 'inherit',
+                              fontSize: 12.5,
+                            }}
                           />
-                          <span className="flex-none">u ·</span>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
                           <input
                             type="number"
                             min="0"
@@ -458,33 +747,68 @@ export default function Step1Import({ data, onUpdate, onNext }) {
                             defaultValue={p.priceEur}
                             onBlur={(e) => handleEditProduct(idx, 'priceEur', parseFloat(e.target.value) || 0)}
                             title="Corriger le prix d'achat si mal lu"
-                            className="w-14 flex-none bg-transparent text-right border-b border-dashed border-transparent hover:border-line-strong focus:border-pharma-500 focus:outline-none"
+                            className="num"
+                            style={{
+                              width: '100%',
+                              padding: '3px 6px',
+                              textAlign: 'right',
+                              background: 'var(--color-neutral-900)',
+                              border: '1px solid var(--color-divider)',
+                              color: 'var(--color-text)',
+                              fontFamily: 'inherit',
+                              fontSize: 12.5,
+                            }}
                           />
-                          <span className="flex-none">€{p.etat === 'A VERIFIER' && ' · à vérifier'}</span>
+                        </div>
+                        <div className="num" style={{ textAlign: 'right', color: 'var(--color-neutral-300)' }}>
+                          {fmtEur2(p.qtyDelivered * p.priceEur)}
+                        </div>
+                        <div className="ell" style={{ fontSize: 11.5, color: signal ? signal.tone : 'var(--color-neutral-600)' }}>
+                          {signal ? signal.text : '—'}
+                        </div>
+                        <div>
+                          {p.etat === 'MANUAL' && (
+                            <button
+                              onClick={() => handleRemoveProduct(idx)}
+                              title="Supprimer"
+                              style={{
+                                width: 22,
+                                height: 22,
+                                border: '1px solid var(--color-divider)',
+                                background: 'transparent',
+                                color: 'var(--color-neutral-400)',
+                                fontFamily: 'inherit',
+                                fontSize: 13,
+                                lineHeight: 1,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              ×
+                            </button>
+                          )}
                         </div>
                       </div>
-                    </div>
-                    {p.etat === 'MANUAL' && (
-                      <button
-                        onClick={() => handleRemoveProduct(idx)}
-                        title="Supprimer"
-                        className="flex-none w-7 h-7 rounded-lg border border-line text-muted-300 hover:text-st-error hover:border-st-error/40 transition-colors text-sm leading-none"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </div>
-                ))}
+                    )
+                  })}
+                </div>
               </div>
-            </div>
+            </>
           )}
 
-          <div className="flex justify-end mt-5">
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
             <button
               onClick={onNext}
               disabled={!canProceed}
-              className={`py-[11px] px-6 rounded-[10px] text-sm font-semibold transition-colors
-                ${canProceed ? 'bg-pharma-500 text-white hover:bg-pharma-600' : 'bg-fill text-muted-200 cursor-not-allowed'}`}
+              style={{
+                padding: '11px 24px',
+                border: `1px solid ${canProceed ? 'var(--color-accent)' : 'var(--color-divider)'}`,
+                background: canProceed ? 'var(--color-accent-800)' : 'transparent',
+                color: canProceed ? 'var(--color-accent-100)' : 'var(--color-neutral-600)',
+                fontFamily: 'inherit',
+                fontSize: 13.5,
+                fontWeight: 600,
+                cursor: canProceed ? 'pointer' : 'not-allowed',
+              }}
             >
               {canProceed ? 'Lancer le matching →' : 'Chargez les deux fichiers'}
             </button>

@@ -4,7 +4,6 @@ import { ArchiveScreen } from './components/ExportScreen.jsx'
 import { HomeScreen } from './components/HomeScreen.jsx'
 import ImportScreen from './components/ImportScreen.jsx'
 import { fmtF } from './blConstants.js'
-import { useTheme } from './useTheme.js'
 import { addHistoryEntry, loadHistory } from './utils/history.js'
 import { buildWorkspaceLines } from './workspaceAdapters.js'
 
@@ -36,7 +35,6 @@ function makeInitialImportData() {
  * React plutôt que par un resetBl() à maintenir à la main).
  */
 export default function App() {
-  const { isLight, toggle } = useTheme()
   const [screen, setScreen] = useState('landing') // 'landing' | 'import' | 'bl' | 'archive'
   const [importData, setImportData] = useState(makeInitialImportData)
   const [workData, setWorkData] = useState(null)
@@ -86,7 +84,6 @@ export default function App() {
       const marge = bl.pv > 0 ? ((bl.pv - bl.pa) / bl.pv) * 100 : 0
       return (
         <ArchiveScreen
-          isLight={isLight}
           bl={bl}
           filename={`FACTURE-YOP-${bl.facture || 'SANS-REF'}.xlsx`}
           recap={[
@@ -110,8 +107,6 @@ export default function App() {
   if (screen === 'import') {
     return (
       <ImportScreen
-        isLight={isLight}
-        onToggleTheme={toggle}
         onHome={() => setScreen('landing')}
         data={importData}
         onUpdate={updateImportData}
@@ -124,8 +119,6 @@ export default function App() {
     return (
       <BlSession
         key={sessionId}
-        isLight={isLight}
-        toggleTheme={toggle}
         lines={workData.lines}
         medicielProducts={workData.medicielProducts}
         supplierName={workData.supplierName}
@@ -144,8 +137,6 @@ export default function App() {
 
   return (
     <HomeScreen
-      isLight={isLight}
-      onToggleTheme={toggle}
       current={null}
       onResume={goToImport}
       onStart={goToImport}

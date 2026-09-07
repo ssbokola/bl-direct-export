@@ -9,7 +9,7 @@ import { downloadExport } from '../workspaceAdapters.js'
 import { AutoAcceptBanner, ResumeBanner, StepHint } from '../uxAdditions.jsx'
 import { useAwayDetection } from '../useAwayDetection.js'
 import { scrollToRow } from '../scrollToRow.js'
-import { ErrorBanner, RowSearch, SideRail, WorkHeader } from './Workspace'
+import { DecisionPanel, ErrorBanner, RowSearch, SideRail, WorkHeader } from './Workspace'
 import { WorkRow, WorkTable } from './WorkTable'
 import { buildSearchIndex, searchMediciel } from '../utils/matching.js'
 
@@ -27,8 +27,6 @@ import { buildSearchIndex, searchMediciel } from '../utils/matching.js'
  * par App.jsx qui démonte alors ce composant (ou change sa `key`).
  */
 export default function BlSession({
-  isLight,
-  toggleTheme,
   lines,
   medicielProducts,
   supplierName,
@@ -111,6 +109,12 @@ export default function BlSession({
     [ws],
   )
 
+  // La décision courante du panneau : la ligne sélectionnée si elle est
+  // encore en attente, sinon la première de la file — mêmes règles que
+  // effectiveSelected dans useBlWorkspace, pour la même raison (ne jamais
+  // agir sur une ligne qui vient de sortir de la vue).
+  const currentPendingIdx = pending.all.find((l) => l.idx === ws.selected)?.idx ?? pending.all[0]?.idx ?? null
+
   const commands = useMemo(() => {
     const line = ws.lines.find((l) => l.idx === ws.selected)
     const cmds = [
@@ -149,10 +153,9 @@ export default function BlSession({
       { label: 'Taux : −5 F', hint: 'conversion', run: () => ws.setTaux((t) => Math.max(1, (t ?? ws.tauxLast) - 5)) },
       { label: 'Coefficient : +0,02', hint: 'validation', run: () => ws.setCoefficient((c) => Math.round((c + 0.02) * 100) / 100) },
       { label: 'Coefficient : −0,02', hint: 'validation', run: () => ws.setCoefficient((c) => Math.round((c - 0.02) * 100) / 100) },
-      { label: isLight ? 'Mode sombre' : 'Mode clair', hint: 'affichage', run: toggleTheme },
     )
     return cmds
-  }, [ws, isLight, toggleTheme, onExitToImport])
+  }, [ws, onExitToImport])
 
   const exportRows = useMemo(
     () =>
@@ -188,8 +191,6 @@ export default function BlSession({
     const excludedLines = ws.lines.filter((l) => l.status === 'excluded')
     return (
       <ExportScreen
-        isLight={isLight}
-        onToggleTheme={toggleTheme}
         bl={{ taux: ws.taux, coeff: ws.coefficient }}
         rows={exportRows}
         excluded={excludedLines}
@@ -222,8 +223,6 @@ export default function BlSession({
   if (innerScreen === 'home') {
     return (
       <HomeScreen
-        isLight={isLight}
-        onToggleTheme={toggleTheme}
         current={{
           supplier: supplierName,
           facture: invoiceNumber,
@@ -247,8 +246,6 @@ export default function BlSession({
     <div style={{ display: 'grid', gridTemplateColumns: '312px minmax(0,1fr)', height: '100vh' }}>
       <SideRail
         ws={ws}
-        isLight={isLight}
-        onToggleTheme={toggleTheme}
         onHome={() => setInnerScreen('home')}
         onExitToImport={onExitToImport}
         onOpenPalette={() => setPaletteOpen(true)}
@@ -305,6 +302,21 @@ export default function BlSession({
           })}
         >
           <StepHint step={ws.step} />
+          {ws.step === 2 && (
+            <DecisionPanel
+              pending={pending.all}
+              activeIdx={currentPendingIdx}
+              onJump={(idx) => { ws.setSelected(idx); ws.setExpanded(null) }}
+              onConfirm={() => ws.confirm(currentPendingIdx)}
+              onSearch={() => {
+                ws.setSelected(currentPendingIdx)
+                ws.setExpanded(currentPendingIdx)
+                setQuery('')
+                scrollToRow(currentPendingIdx)
+              }}
+              onExclude={(motif) => ws.exclude(currentPendingIdx, motif)}
+            />
+          )}
           <ResumeBanner
             shown={away && ws.step === 2 && ws.remaining > 0 && ws.selected !== null}
             lineNumber={ws.selected + 1}

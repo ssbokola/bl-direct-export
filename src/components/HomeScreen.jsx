@@ -8,8 +8,6 @@ import { fmtEur, fmtF } from '../blConstants'
  * comparer deux.
  */
 export function HomeScreen({
-  isLight,
-  onToggleTheme,
   current,
   onResume,
   onStart,
@@ -37,7 +35,6 @@ export function HomeScreen({
               Kemet Services · Ph. Saint Clément
             </div>
           </div>
-          <ThemeButton isLight={isLight} onClick={onToggleTheme} />
         </header>
 
         <h2 style={{ margin: '0 0 8px', fontSize: 30, fontWeight: 500 }}>Bons de livraison France</h2>
@@ -68,11 +65,10 @@ export function HomeScreen({
               </div>
             </div>
             <div>
-              <div style={{ height: 3, borderRadius: 2, background: 'var(--color-neutral-800)', overflow: 'hidden' }}>
+              <div style={{ height: 3, background: 'var(--color-neutral-800)', overflow: 'hidden' }}>
                 <div
                   style={{
                     height: '100%',
-                    borderRadius: 2,
                     background: 'var(--color-accent)',
                     width: `${current.lignes > 0 ? Math.round((current.resolved / current.lignes) * 100) : 0}%`,
                   }}
@@ -385,27 +381,6 @@ function buildCompare(history, compare) {
       delta: Math.round((mg(b) - mg(a)) * 10) / 10,
     },
   ]
-}
-
-export function ThemeButton({ isLight, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        padding: '4px 10px',
-        borderRadius: 'var(--radius-md)',
-        border: '1px solid var(--color-divider)',
-        background: 'transparent',
-        color: 'var(--color-neutral-300)',
-        fontFamily: 'inherit',
-        fontSize: 12,
-        cursor: 'pointer',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {isLight ? 'Sombre' : 'Clair'}
-    </button>
-  )
 }
 
 export function PrimaryButton({ children, onClick, disabled }) {
