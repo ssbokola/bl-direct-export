@@ -1,6 +1,6 @@
 import * as pdfjsLib from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
-import { isScannedPdf, ocrPdf, parseOcrText } from './ocrEngine.js'
+import { isScannedPdf, ocrPdf, parseOcrText, PHARMACY_NAME_RE, PHARMACY_NAME_ALL_RE } from './ocrEngine.js'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -102,19 +102,25 @@ export async function parseOfficinePdf(file, onProgress) {
 
 function buildTextLines(items, yTolerance) {
   if (!items.length) return []
-  const sorted = [...items].sort((a, b) => b.y - a.y || a.x - b.x)
+  // Sort by page first: pages restart their Y origin, so grouping purely by Y
+  // (ignoring page) merges a repeated header/footer sitting at the same Y on
+  // every page into one giant line — e.g. a 4-page BL echoing "PHARMACIE DE
+  // LA POSTE" and "Page" once per page collapses into a single garbled row.
+  const sorted = [...items].sort((a, b) => a.page - b.page || b.y - a.y || a.x - b.x)
   const lines = []
   let currentLineItems = [sorted[0]]
   let currentY = sorted[0].y
+  let currentPage = sorted[0].page
 
   for (let i = 1; i < sorted.length; i++) {
-    if (Math.abs(sorted[i].y - currentY) <= yTolerance) {
+    if (sorted[i].page === currentPage && Math.abs(sorted[i].y - currentY) <= yTolerance) {
       currentLineItems.push(sorted[i])
     } else {
       currentLineItems.sort((a, b) => a.x - b.x)
       lines.push(currentLineItems.map(it => it.str).join(' '))
       currentLineItems = [sorted[i]]
       currentY = sorted[i].y
+      currentPage = sorted[i].page
     }
   }
   if (currentLineItems.length) {
@@ -148,7 +154,7 @@ function extractHeaderInfo(fullText, allItems) {
 
   // Supplier: typically the first prominent name, often the pharmacy issuing the BL.
   // Client: look for destination pharmacy name after "Client" or similar label.
-  const supplierMatch = fullText.match(/^(PHARMACIE\s+[A-ZÀ-Ÿ\s]+)/im)
+  const supplierMatch = fullText.match(PHARMACY_NAME_RE)
   if (supplierMatch) result.supplierName = supplierMatch[1].trim()
 
   // Client is the second pharmacy name, or after a "Client" label
@@ -157,7 +163,7 @@ function extractHeaderInfo(fullText, allItems) {
     result.clientName = clientMatch[1].trim()
   } else {
     // Find all pharmacy names and use the second one as client
-    const pharmacyNames = fullText.match(/PHARMACIE\s+[A-ZÀ-Ÿ\s]+/gim)
+    const pharmacyNames = fullText.match(PHARMACY_NAME_ALL_RE)
     if (pharmacyNames && pharmacyNames.length >= 2) {
       result.supplierName = pharmacyNames[0].trim()
       result.clientName = pharmacyNames[1].trim()

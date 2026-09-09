@@ -6,6 +6,18 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
 const RENDER_SCALE = 2.5
 
+// A pharmacy name is "PHARMACIE" plus a few capitalized words — but on the
+// same OCR/PDF line it's often immediately followed by boilerplate
+// ("BON DE LIVRAISON", "Page X/Y") that is also all-caps, so a bare
+// [A-Z\s]+ run swallows that too. Stop before any such keyword.
+const PHARMACY_STOPWORDS = 'BON|FACTURE|LIVRAISON|CLIENT|PAGE|DATE|N[°O]|TVA'
+export const PHARMACY_NAME_RE = new RegExp(
+  `^(PHARMACIE(?:\\s+(?!(?:${PHARMACY_STOPWORDS})\\b)[A-ZÀ-Ÿ]+){1,6})`, 'im'
+)
+export const PHARMACY_NAME_ALL_RE = new RegExp(
+  `PHARMACIE(?:\\s+(?!(?:${PHARMACY_STOPWORDS})\\b)[A-ZÀ-Ÿ]+){1,6}`, 'gim'
+)
+
 export async function isScannedPdf(file) {
   const arrayBuffer = await file.arrayBuffer()
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
@@ -457,7 +469,7 @@ function extractOcrHeaderInfo(lines) {
   const blMatch = top.match(/N[°o]?\s*[:\s]*(\d{3,})/i)
   if (blMatch && !result.invoiceNumber) result.blNumber = blMatch[1]
 
-  const pharmaNames = top.match(/PHARMACIE\s+[A-ZÀ-Ÿ\s]+/gim)
+  const pharmaNames = top.match(PHARMACY_NAME_ALL_RE)
   if (pharmaNames && pharmaNames.length >= 2) {
     result.supplierName = pharmaNames[0].trim()
     result.clientName = pharmaNames[1].trim()
