@@ -171,43 +171,51 @@ export async function ocrPdf(file, onProgress) {
 
   onProgress?.({ phase: 'init', message: 'Initialisation OCR...', pct: 0 })
 
-  const worker = await createWorker('fra', 1, {
-    logger: (m) => {
-      if (m.status === 'recognizing text') {
-        onProgress?.({ phase: 'ocr', message: 'Reconnaissance...', pct: Math.round(m.progress * 100) })
-      }
-    },
-  })
+  // Each page is OCR'd independently, and tesseract.js runs each worker in its
+  // own thread — so a multi-page BL was leaving every core but one idle while
+  // pages were recognized strictly one after another. A small worker pool lets
+  // pages run concurrently instead, which is where most of the wait was going
+  // on a typical 3-5 page BL.
+  const concurrency = Math.max(1, Math.min(3, numPages, (navigator.hardwareConcurrency || 4) - 1))
+  const workers = await Promise.all(
+    Array.from({ length: concurrency }, () => createWorker('fra', 1))
+  )
 
-  const allText = []
+  const allText = new Array(numPages)
+  let done = 0
 
-  for (let i = 1; i <= numPages; i++) {
-    onProgress?.({
-      phase: 'render',
-      message: `Lecture page ${i}/${numPages}...`,
-      pct: Math.round(((i - 1) / numPages) * 100),
-    })
-
-    const page = await pdf.getPage(i)
+  async function processPage(pageNum, worker) {
+    const page = await pdf.getPage(pageNum)
     const canvas = await renderPageToCanvas(page)
-
-    onProgress?.({
-      phase: 'ocr',
-      message: `OCR page ${i}/${numPages}...`,
-      pct: Math.round(((i - 0.5) / numPages) * 100),
-    })
 
     const { data } = await worker.recognize(canvas, {}, { text: true, tsv: true })
     const words = parseTsvWords(data.tsv)
     const slope = estimateSkew(words)
-    console.log(`🔍 OCR page ${i}: ${words.length} mots, inclinaison=${slope.toFixed(5)}`)
-    allText.push(groupWordsIntoLines(words, slope).join('\n'))
+    console.log(`🔍 OCR page ${pageNum}: ${words.length} mots, inclinaison=${slope.toFixed(5)}`)
+    allText[pageNum - 1] = groupWordsIntoLines(words, slope).join('\n')
 
     canvas.width = 0
     canvas.height = 0
+
+    done++
+    onProgress?.({
+      phase: 'ocr',
+      message: `OCR : ${done}/${numPages} page${numPages > 1 ? 's' : ''} terminée${done > 1 ? 's' : ''}...`,
+      pct: Math.round((done / numPages) * 100),
+    })
   }
 
-  await worker.terminate()
+  // Round-robin: each worker chews through its own slice of pages sequentially,
+  // but the pool as a whole processes `concurrency` pages at once.
+  await Promise.all(
+    workers.map((worker, wi) => (async () => {
+      for (let p = wi + 1; p <= numPages; p += concurrency) {
+        await processPage(p, worker)
+      }
+    })())
+  )
+
+  await Promise.all(workers.map((w) => w.terminate()))
 
   onProgress?.({ phase: 'done', message: 'OCR termine', pct: 100 })
 
