@@ -61,6 +61,7 @@ export default function App() {
     setWorkData({
       lines,
       medicielProducts: importData.medicielProducts,
+      orderLines: importData.orderLines,
       supplierName: importData.supplierName || 'Fournisseur non renseigné',
       supplierSource: importData.source,
       invoiceNumber: importData.invoiceNumber,
@@ -132,6 +133,7 @@ export default function App() {
         key={sessionId}
         lines={workData.lines}
         medicielProducts={workData.medicielProducts}
+        orderLines={workData.orderLines}
         supplierName={workData.supplierName}
         supplierSource={workData.supplierSource}
         invoiceNumber={workData.invoiceNumber}

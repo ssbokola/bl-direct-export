@@ -430,3 +430,22 @@ export function SecondaryButton({ children, onClick }) {
     </button>
   )
 }
+
+/**
+ * Le duo Excel/PDF pour la liste des ruptures — même geste aux deux endroits
+ * où elle est proposée (fin du Matching, écran d'Export), pour ne jamais
+ * faire deviner où télécharger quoi. Rien à afficher s'il n'y a pas de
+ * rupture à exploiter.
+ */
+export function RuptureDownloadButtons({ count, onExcel, onPdf }) {
+  if (!count) return null
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none' }}>
+      <span className="num" style={{ fontSize: 12, color: 'var(--color-warn)', whiteSpace: 'nowrap' }}>
+        {count} rupture{count > 1 ? 's' : ''}
+      </span>
+      <SecondaryButton onClick={onExcel}>Excel</SecondaryButton>
+      <SecondaryButton onClick={onPdf}>PDF</SecondaryButton>
+    </div>
+  )
+}

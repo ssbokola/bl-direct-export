@@ -1,5 +1,5 @@
 import { fmtEur, fmtF } from '../blConstants'
-import { PrimaryButton, SecondaryButton } from './HomeScreen'
+import { PrimaryButton, RuptureDownloadButtons, SecondaryButton } from './HomeScreen'
 
 /**
  * Étape 5 — l'export. Il prend tout l'écran : c'est un aboutissement, pas
@@ -20,6 +20,9 @@ export function ExportScreen({
   fileMeta,
   downloaded,
   onDownload,
+  ruptureCount,
+  onDownloadRuptureExcel,
+  onDownloadRupturePdf,
   onBack,
   onFinish,
 }) {
@@ -92,6 +95,31 @@ export function ExportScreen({
                 {downloaded ? 'Télécharger à nouveau' : 'Télécharger'}
               </PrimaryButton>
             </div>
+
+            {ruptureCount > 0 && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 14,
+                  padding: '12px 16px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--color-surface)',
+                  boxShadow: 'var(--shadow-sm)',
+                  margin: '0 0 24px',
+                }}
+              >
+                <div style={{ fontSize: 13, color: 'var(--color-neutral-400)' }}>
+                  Produits en rupture sur ce BL — désignation et quantité manquante, sans prix.
+                </div>
+                <RuptureDownloadButtons
+                  count={ruptureCount}
+                  onExcel={onDownloadRuptureExcel}
+                  onPdf={onDownloadRupturePdf}
+                />
+              </div>
+            )}
 
             <div style={{ ...kicker, marginBottom: 8 }}>Lignes exportées</div>
             <div style={{ overflowX: 'auto', borderRadius: 'var(--radius-md)' }}>

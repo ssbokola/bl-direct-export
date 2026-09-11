@@ -93,9 +93,10 @@ export function generateCsvContent(products, invoiceNumber, orderNumber) {
 }
 
 /**
- * Download XLSX file.
+ * Download any Blob as a file — the throwaway-<a> trick, shared by every
+ * export this app produces (Médiciel XLSX, and the rupture XLSX/PDF).
  */
-export function downloadXlsx(blob, filename) {
+export function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
@@ -104,4 +105,35 @@ export function downloadXlsx(blob, filename) {
   link.click()
   document.body.removeChild(link)
   URL.revokeObjectURL(url)
+}
+
+/**
+ * Download XLSX file.
+ */
+export function downloadXlsx(blob, filename) {
+  downloadBlob(blob, filename)
+}
+
+/**
+ * La liste des ruptures pour relancer le fournisseur ou repasser commande
+ * ailleurs : désignation + quantité manquante, sans prix (voir
+ * ruptureExport.js pour le calcul des lignes).
+ */
+export function generateRuptureXlsxBlob(rows, meta) {
+  const info = [
+    ['Fournisseur', meta.supplierName || ''],
+    ['Référence BL', meta.blReference || ''],
+    ['Ruptures', String(rows.length)],
+    [],
+  ]
+  const header = ['Désignation', 'Qté manquante']
+  const wsData = [...info, header, ...rows.map((r) => [r.designation, r.manquant])]
+  const ws = XLSX.utils.aoa_to_sheet(wsData)
+  ws['!cols'] = [{ wch: 50 }, { wch: 14 }]
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Ruptures')
+
+  const data = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  return new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
 }

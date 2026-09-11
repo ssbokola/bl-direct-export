@@ -7,6 +7,7 @@ import { fmtEur, fmtF } from '../blConstants'
 import { useBlWorkspace } from '../useBlWorkspace'
 import { downloadExport } from '../workspaceAdapters.js'
 import { writeBlFacts } from '../utils/supplierStats.js'
+import { buildRuptureList, downloadRuptureExcel, downloadRupturePdf } from '../utils/ruptureExport.js'
 import { AutoAcceptBanner, ResumeBanner, StepHint } from '../uxAdditions.jsx'
 import { useAwayDetection } from '../useAwayDetection.js'
 import { scrollToRow } from '../scrollToRow.js'
@@ -30,6 +31,7 @@ import { buildSearchIndex, searchMediciel } from '../utils/matching.js'
 export default function BlSession({
   lines,
   medicielProducts,
+  orderLines,
   supplierName,
   supplierSource,
   invoiceNumber,
@@ -180,6 +182,25 @@ export default function BlSession({
 
   const filename = `FACTURE-YOP-${invoiceNumber || blNumber || 'SANS-REF'}.xlsx`
 
+  // Désignation + quantité manquante, sans prix — pour relancer le
+  // fournisseur ou repasser commande ailleurs. Disponible dès la fin du
+  // Matching (ws.lines porte déjà hasOrderDoc/enRupture/qtyCommandee), pas
+  // besoin d'attendre la conversion des prix.
+  const ruptureRows = useMemo(() => buildRuptureList(ws.lines, orderLines), [ws.lines, orderLines])
+  const ruptureMeta = useMemo(
+    () => ({ supplierName, blReference: invoiceNumber || blNumber || 'SANS-REF' }),
+    [supplierName, invoiceNumber, blNumber],
+  )
+  const ruptureFilenameBase = `RUPTURES-${invoiceNumber || blNumber || 'SANS-REF'}`
+  const handleDownloadRuptureExcel = useCallback(
+    () => downloadRuptureExcel(ruptureRows, ruptureMeta, `${ruptureFilenameBase}.xlsx`),
+    [ruptureRows, ruptureMeta, ruptureFilenameBase],
+  )
+  const handleDownloadRupturePdf = useCallback(
+    () => downloadRupturePdf(ruptureRows, ruptureMeta, `${ruptureFilenameBase}.pdf`),
+    [ruptureRows, ruptureMeta, ruptureFilenameBase],
+  )
+
   const buildRecap = useCallback(
     () => [
       { label: 'Fournisseur', value: supplierName },
@@ -239,6 +260,9 @@ export default function BlSession({
           downloadExport(exportRows, invoiceNumber, orderNumber, filename)
           setDownloaded(true)
         }}
+        ruptureCount={ruptureRows.length}
+        onDownloadRuptureExcel={handleDownloadRuptureExcel}
+        onDownloadRupturePdf={handleDownloadRupturePdf}
         onBack={() => ws.go(4)}
         onFinish={() => {
           writeBlFacts(buildBlFacts())
@@ -291,7 +315,13 @@ export default function BlSession({
       />
 
       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
-        <WorkHeader ws={ws} onExitToImport={onExitToImport} />
+        <WorkHeader
+          ws={ws}
+          onExitToImport={onExitToImport}
+          ruptureCount={ruptureRows.length}
+          onDownloadRuptureExcel={handleDownloadRuptureExcel}
+          onDownloadRupturePdf={handleDownloadRupturePdf}
+        />
 
         <WorkTable
           paLive={ws.paLive}

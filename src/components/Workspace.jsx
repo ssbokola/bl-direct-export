@@ -1,5 +1,5 @@
 import { FILTERS, STEPS, fmtEur, fmtF } from '../blConstants'
-import { PrimaryButton, SecondaryButton } from './HomeScreen'
+import { PrimaryButton, RuptureDownloadButtons, SecondaryButton } from './HomeScreen'
 import { CommandsButton, ShortcutKey } from '../uxAdditions.jsx'
 
 const PENDING_CAP = 6
@@ -735,7 +735,7 @@ function Summary({ rows, total, note }) {
  * L'en-tête du plan de travail : titre, ruban d'étapes, compteur de lignes
  * restantes, et les deux boutons de navigation.
  */
-export function WorkHeader({ ws, onExitToImport }) {
+export function WorkHeader({ ws, onExitToImport, ruptureCount, onDownloadRuptureExcel, onDownloadRupturePdf }) {
   const steps = [2, 3, 4, 5]
 
   const nextLabel = {
@@ -778,6 +778,13 @@ export function WorkHeader({ ws, onExitToImport }) {
           Montant BL <span style={{ color: 'var(--color-text)' }}>{fmtEur(ws.totals.totalEur)}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 'none' }}>
+          {ws.step === 2 && !disabled && (
+            <RuptureDownloadButtons
+              count={ruptureCount}
+              onExcel={onDownloadRuptureExcel}
+              onPdf={onDownloadRupturePdf}
+            />
+          )}
           <SecondaryButton onClick={() => ws.prev(onExitToImport)}>← {prevLabel}</SecondaryButton>
           <PrimaryButton onClick={ws.next} disabled={disabled}>
             {nextLabel}
