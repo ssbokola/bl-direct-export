@@ -1,4 +1,7 @@
+import { useEffect, useState } from 'react'
 import { fmtEur, fmtF } from '../blConstants'
+import { searchLatestPrices } from '../utils/priceHistory.js'
+import { supabase } from '../utils/supabaseClient.js'
 
 /**
  * Accueil — reprise du BL en cours, dépôt d'un nouveau BL, historique.
@@ -46,6 +49,8 @@ export function HomeScreen({
           Du PDF fournisseur au fichier d'import Médiciel : lecture, appariement, conversion en FCFA, prix de
           vente, export.
         </p>
+
+        <PriceLookup />
 
         <div style={{ ...kicker, marginBottom: 10 }}>BL en cours</div>
 
@@ -288,6 +293,123 @@ export function HomeScreen({
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Dernier prix d'achat / prix de revient connu d'un produit, tous postes
+ * confondus — alimenté par `bl_lines` (Supabase), la même table partagée
+ * que les ruptures et la fiabilité fournisseurs. Sur l'accueil et pas
+ * derrière une navigation : c'est le genre de vérification qu'on veut
+ * pouvoir faire sans même ouvrir un BL (négociation, prix annoncé au
+ * téléphone, contrôle avant de valider une nouvelle ligne).
+ */
+function PriceLookup() {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState(null)
+  const [error, setError] = useState(null)
+  const configured = Boolean(supabase)
+
+  const q = query.trim()
+  const searchable = q.length >= 2
+
+  useEffect(() => {
+    if (!configured || !searchable) return undefined
+    let cancelled = false
+    const timer = setTimeout(() => {
+      searchLatestPrices(q)
+        .then((rows) => {
+          if (cancelled) return
+          setResults(rows)
+          setError(null)
+        })
+        .catch((err) => {
+          if (cancelled) return
+          setError(err.message)
+        })
+    }, 300)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [q, searchable, configured])
+
+  if (!configured) return null
+
+  const kicker = {
+    fontSize: 10,
+    letterSpacing: '.1em',
+    textTransform: 'uppercase',
+    color: 'var(--color-neutral-500)',
+  }
+
+  return (
+    <div style={{ marginBottom: 40 }}>
+      <div style={{ ...kicker, marginBottom: 10 }}>Dernier prix connu</div>
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Chercher un produit — tous postes, tous fournisseurs…"
+        style={{
+          width: '100%',
+          padding: '11px 14px',
+          borderRadius: 'var(--radius-md)',
+          border: '1px solid var(--color-divider)',
+          background: 'var(--color-surface)',
+          color: 'var(--color-text)',
+          fontFamily: 'inherit',
+          fontSize: 14,
+        }}
+      />
+
+      {searchable && error && (
+        <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--color-error)' }}>{error}</div>
+      )}
+
+      {searchable && !error && results && results.length === 0 && (
+        <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--color-neutral-500)' }}>
+          Aucun produit trouvé — il n'a peut-être jamais été saisi via cette appli.
+        </div>
+      )}
+
+      {searchable && !error && results && results.length > 0 && (
+        <div
+          style={{
+            marginTop: 10,
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--color-surface)',
+            boxShadow: 'var(--shadow-sm)',
+            overflow: 'hidden',
+          }}
+        >
+          {results.map((r) => (
+            <div
+              key={r.code_mediciel}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0,1.4fr) 110px 110px minmax(0,1fr)',
+                alignItems: 'center',
+                gap: 16,
+                padding: '10px 16px',
+                fontSize: 12.5,
+                boxShadow: 'inset 0 -1px 0 var(--color-divider)',
+              }}
+            >
+              <div className="ell">{r.designation}</div>
+              <div className="num" style={{ textAlign: 'right' }}>
+                PA {fmtF(r.prix_achat_fcfa)} F
+              </div>
+              <div className="num" style={{ textAlign: 'right', color: 'var(--color-neutral-300)' }}>
+                PRT {r.prix_revient_fcfa != null ? `${fmtF(r.prix_revient_fcfa)} F` : '—'}
+              </div>
+              <div className="ell num" style={{ fontSize: 11, color: 'var(--color-neutral-500)' }}>
+                {r.supplier_name} · {new Date(r.created_at).toLocaleDateString('fr-FR')}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -237,6 +237,7 @@ export default function BlSession({
         taux_rupture_pct: p.tauxRupturePct || null,
         prix_achat_eur: p.eur,
         prix_achat_fcfa: p.pa,
+        prix_revient_fcfa: p.prt,
         prix_vente_fcfa: ws.pvOf(p),
         taux_change: ws.taux,
       }))
