@@ -199,8 +199,12 @@ export function autoMatch(blProducts, medicielProducts, matchMemory = {}) {
   const byCode = new Map(medicielProducts.map(p => [String(p.code), p]))
 
   return blProducts.map(blProduct => {
-    // A line matched by hand on a previous BL wins outright: the user already
-    // decided, and the supplier's wording has not changed since.
+    // A line matched by hand on a previous BL is proposed outright at full
+    // confidence — but it still has to pass through the same bulk-accept
+    // gesture as an 'auto' match (see acceptAuto in useBlWorkspace.js)
+    // before it can reach the export. matchMemory is shared, unauthenticated
+    // team memory (see settings.js/supabase-setup.sql): a wrong or poisoned
+    // entry must not be able to sail through without a human ever looking.
     const remembered = matchMemory[blProduct.cip]
     if (remembered) {
       const product = byCode.get(String(remembered.code))

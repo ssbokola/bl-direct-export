@@ -135,7 +135,7 @@ export default function BlSession({
     ]
     if (ws.autoCount > 0) {
       cmds.push({
-        label: `Accepter les ${ws.autoCount} appariements auto`,
+        label: `Accepter les ${ws.autoCount} appariements`,
         hint: 'matching',
         run: ws.acceptAuto,
       })

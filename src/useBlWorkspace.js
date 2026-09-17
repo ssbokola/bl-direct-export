@@ -80,7 +80,11 @@ export function useBlWorkspace(initialLines) {
 
   const resolved = lines.filter((l) => l.med || l.status === 'excluded').length
   const remaining = lines.length - resolved
-  const autoCount = lines.filter((l) => l.status === 'auto').length
+  // 'seen' compte ici avec 'auto' : une correspondance "déjà vue" vient de la
+  // mémoire d'équipe partagée (Supabase, écriture ouverte sans authentification —
+  // voir settings.js), donc une entrée erronée ou empoisonnée ne doit jamais
+  // filer vers l'export sans qu'un humain l'ait au moins parcourue une fois.
+  const autoCount = lines.filter((l) => l.status === 'auto' || l.status === 'seen').length
 
   const go = useCallback((target) => {
     setStep(target)
@@ -89,9 +93,9 @@ export function useBlWorkspace(initialLines) {
   }, [])
 
   const next = useCallback(() => {
-    // Étape 2 -> 3 : toutes les lignes tranchées, ET les auto-appariées
-    // relues et acceptées en bloc (voir acceptAuto) — pas de PA calculé sur
-    // une centaine de lignes qu'aucun humain n'a regardées.
+    // Étape 2 -> 3 : toutes les lignes tranchées, ET les auto-appariées /
+    // déjà vues relues et acceptées en bloc (voir acceptAuto) — pas de PA
+    // calculé sur une centaine de lignes qu'aucun humain n'a regardées.
     if (step === 2 && (remaining > 0 || autoCount > 0)) return
     // Étape 3 -> 4 : le taux banque doit être connu — sans lui un PA n'est
     // pas un prix, juste la part de frais.
@@ -115,11 +119,11 @@ export function useBlWorkspace(initialLines) {
     })
   }, [])
 
-  /** Bascule en bloc les lignes auto-appariées vers "validated" — un geste
-   * unique et volontaire, plutôt que les laisser filer sans qu'un humain les
-   * ait regardées. */
+  /** Bascule en bloc les lignes auto-appariées ET "déjà vues" vers
+   * "validated" — un geste unique et volontaire, plutôt que les laisser
+   * filer sans qu'un humain les ait regardées. */
   const acceptAuto = useCallback(() => {
-    setLines((ls) => ls.map((l) => (l.status === 'auto' ? { ...l, status: 'validated' } : l)))
+    setLines((ls) => ls.map((l) => (l.status === 'auto' || l.status === 'seen' ? { ...l, status: 'validated' } : l)))
   }, [])
 
   /** Apparier une ligne à un produit Médiciel choisi à la main. */

@@ -33,10 +33,12 @@ export function StepHint({ step }) {
  * La validation en bloc des appariements automatiques.
  *
  * Le défaut qu'elle corrige : une centaine de lignes appariées par la
- * machine passaient à l'étape suivante sans qu'un humain les ait regardées.
- * Un geste unique et volontaire fait basculer ces lignes de « Auto » à
- * « Validé » (voir acceptAuto dans useBlWorkspace.js) ; l'étape suivante
- * reste fermée tant qu'il n'est pas fait.
+ * machine — soit par score de confiance (« Auto »), soit par la mémoire
+ * d'équipe partagée (« Déjà vu », voir matching.js/settings.js) — passaient
+ * à l'étape suivante sans qu'un humain les ait regardées. Un geste unique
+ * et volontaire fait basculer ces deux statuts vers « Validé » (voir
+ * acceptAuto dans useBlWorkspace.js) ; l'étape suivante reste fermée tant
+ * qu'il n'est pas fait.
  * ------------------------------------------------------------------ */
 
 export function AutoAcceptBanner({ count, onAccept }) {
