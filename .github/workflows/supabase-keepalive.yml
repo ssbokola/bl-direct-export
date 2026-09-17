@@ -1,0 +1,23 @@
+name: Supabase keepalive
+
+# BL France n'est utilisée que 1-2 fois par mois — largement en dessous du
+# seuil de mise en pause automatique de Supabase (~7 jours d'inactivité).
+# Sans ça, la base serait quasi systématiquement en pause à chaque usage
+# réel, et les écritures dans bl_lines (ruptures, historique de prix)
+# seraient perdues silencieusement (voir writeBlFacts dans supplierStats.js).
+# Une requête minuscule toutes les 3 jours suffit à compter comme activité
+# et empêcher la pause, sans jamais toucher à l'appli elle-même.
+
+on:
+  schedule:
+    - cron: '0 6 */3 * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase (clé publique, la même que dans l'appli déployée)
+        run: |
+          curl -sf "https://xaajjtislmvhjipbvmgh.supabase.co/rest/v1/bl_lines?select=id&limit=1" \
+            -H "apikey: sb_publishable_PZ0X8Z2HtH7HJbSM0_XXug_K5W893-Q"
