@@ -275,10 +275,16 @@ export function useBlWorkspace(initialLines) {
     [filter, lines],
   )
 
+  // Tri alphabétique affiché du Matching à la Validation (étapes 2-4) — sur
+  // la dérivée `visible` seulement, jamais sur `lines` : pick/exclude/confirm
+  // et restore indexent `lines` par position brute (i === l.idx), un tri de
+  // l'état lui-même corromprait silencieusement ces accès.
   const visible = useMemo(() => {
-    if (effectiveFilter === 'all') return lines
-    return lines.filter((l) => l.status === effectiveFilter)
-  }, [lines, effectiveFilter])
+    const base = effectiveFilter === 'all' ? lines : lines.filter((l) => l.status === effectiveFilter)
+    return step >= 2 && step <= 4
+      ? [...base].sort((a, b) => (a.med || a.label).localeCompare(b.med || b.label, 'fr'))
+      : base
+  }, [lines, effectiveFilter, step])
 
   // Si la ligne sélectionnée sort de la vue filtrée, retombe sur la première
   // ligne visible plutôt que de laisser `selected` pointer sur une ligne

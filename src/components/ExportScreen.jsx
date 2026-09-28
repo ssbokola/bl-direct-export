@@ -16,10 +16,7 @@ export function ExportScreen({
   rows,
   excluded,
   recap,
-  filename,
-  fileMeta,
-  downloaded,
-  onDownload,
+  files,
   ruptureCount,
   onDownloadRuptureExcel,
   onDownloadRupturePdf,
@@ -49,51 +46,61 @@ export function ExportScreen({
 
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 320px', gap: 20, alignItems: 'start' }}>
           <div>
-            <h3 style={{ margin: '0 0 6px', fontSize: 22, fontWeight: 500 }}>Fichier prêt pour Médiciel</h3>
+            <h3 style={{ margin: '0 0 6px', fontSize: 22, fontWeight: 500 }}>
+              {files.length > 1 ? 'Fichiers prêts pour Médiciel' : 'Fichier prêt pour Médiciel'}
+            </h3>
             <p style={{ fontSize: 14, color: 'var(--color-neutral-400)', maxWidth: '56ch' }}>
               {rows.length} lignes converties
-              {excluded.length > 0 && `, ${excluded.length} exclue${excluded.length > 1 ? 's' : ''}`}. Fichier XLSX
+              {excluded.length > 0 && `, ${excluded.length} exclue${excluded.length > 1 ? 's' : ''}`}
+              {files.length > 1 ? `, réparties sur ${files.length} BL` : ''}. Fichier{files.length > 1 ? 's' : ''} XLSX
               d'import direct, taux {fmtF(bl.taux)} et coefficient ×{bl.coeff.toFixed(2).replace('.', ',')}.
             </p>
 
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 14,
-                padding: 16,
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--color-surface)',
-                boxShadow: 'var(--shadow-sm)',
-                margin: '18px 0 24px',
-              }}
-            >
-              <span
-                style={{
-                  width: 34,
-                  height: 42,
-                  flex: 'none',
-                  display: 'grid',
-                  placeItems: 'center',
-                  border: '1px solid var(--color-neutral-800)',
-                  borderRadius: 0,
-                  fontSize: 9.5,
-                  color: 'var(--color-accent-300)',
-                }}
-              >
-                XLS
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="num ell" style={{ fontSize: 13.5 }}>
-                  {filename}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, margin: '18px 0 24px' }}>
+              {files.map((f) => (
+                <div
+                  key={f.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
+                    padding: 16,
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--color-surface)',
+                    boxShadow: 'var(--shadow-sm)',
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 34,
+                      height: 42,
+                      flex: 'none',
+                      display: 'grid',
+                      placeItems: 'center',
+                      border: '1px solid var(--color-neutral-800)',
+                      borderRadius: 0,
+                      fontSize: 9.5,
+                      color: 'var(--color-accent-300)',
+                    }}
+                  >
+                    XLS
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {f.label && (
+                      <div style={{ ...kicker, marginBottom: 2 }}>{f.label}</div>
+                    )}
+                    <div className="num ell" style={{ fontSize: 13.5 }}>
+                      {f.filename}
+                    </div>
+                    <div className="num" style={{ fontSize: 11.5, color: 'var(--color-neutral-500)', marginTop: 3 }}>
+                      {f.fileMeta}
+                    </div>
+                  </div>
+                  <PrimaryButton onClick={f.onDownload}>
+                    {f.downloaded ? 'Télécharger à nouveau' : 'Télécharger'}
+                  </PrimaryButton>
                 </div>
-                <div className="num" style={{ fontSize: 11.5, color: 'var(--color-neutral-500)', marginTop: 3 }}>
-                  {fileMeta}
-                </div>
-              </div>
-              <PrimaryButton onClick={onDownload}>
-                {downloaded ? 'Télécharger à nouveau' : 'Télécharger'}
-              </PrimaryButton>
+              ))}
             </div>
 
             {ruptureCount > 0 && (

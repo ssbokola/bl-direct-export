@@ -17,26 +17,42 @@ import { generateXlsxBlob, downloadXlsx } from './utils/csvGenerator.js'
  * `orderLines` (facultatif) vient d'orderParser.js — le bon de commande de
  * la même livraison, déposé à l'import. Sans lui, le comportement est
  * inchangé (aucune ligne n'a `hasOrderDoc`).
+ *
+ * `blDocuments` — un ou plusieurs BL de la même livraison (voir
+ * Step1Import.jsx), partageant les mêmes frais de livraison à l'étape
+ * Conversion. L'appariement (`autoMatch`) tourne document par document, mais
+ * l'indexation `idx` est UN SEUL compteur monotone sur la concaténation —
+ * useBlWorkspace.js (pick/exclude/confirm/restore) suppose que la position
+ * dans `lines` égale toujours `l.idx` ; deux compteurs distincts casseraient
+ * cet invariant silencieusement. Pour la même raison, `applyRuptureFacts`
+ * tourne une seule fois sur le tableau combiné final : `matchOrderToDelivery`
+ * dédoublonne via un Set interne qui doit voir toutes les lignes à la fois,
+ * sous peine de faire correspondre deux fois une même ligne de commande à
+ * des produits similaires sur deux BL différents.
  */
-export async function buildWorkspaceLines(blProducts, medicielProducts, orderLines) {
+export async function buildWorkspaceLines(blDocuments, medicielProducts, orderLines) {
   const memory = await syncMatchMemory()
-  const matches = autoMatch(blProducts, medicielProducts, memory)
-  const lines = matches.map(({ blProduct, match, score, status }, idx) => ({
-    idx,
-    cip: blProduct.cip,
-    label: blProduct.designation,
-    qtyOrdered: blProduct.qtyOrdered,
-    qty: blProduct.qtyDelivered,
-    eur: blProduct.priceEur,
-    ocr: 100,
-    med: match?.produit || null,
-    code: match?.code || null,
-    score,
-    status,
-    pvActuel: match?.prixVenteTTC || 0,
-    tva: match?.tva || '',
-    motif: null,
-  }))
+  let idx = 0
+  const lines = blDocuments.flatMap((doc) => {
+    const matches = autoMatch(doc.blProducts, medicielProducts, memory)
+    return matches.map(({ blProduct, match, score, status }) => ({
+      idx: idx++,
+      blDocId: doc.id,
+      cip: blProduct.cip,
+      label: blProduct.designation,
+      qtyOrdered: blProduct.qtyOrdered,
+      qty: blProduct.qtyDelivered,
+      eur: blProduct.priceEur,
+      ocr: 100,
+      med: match?.produit || null,
+      code: match?.code || null,
+      score,
+      status,
+      pvActuel: match?.prixVenteTTC || 0,
+      tva: match?.tva || '',
+      motif: null,
+    }))
+  })
   return applyRuptureFacts(lines, orderLines)
 }
 

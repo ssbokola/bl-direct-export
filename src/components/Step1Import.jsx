@@ -4,6 +4,7 @@ import { parseOfficinePdf } from '../utils/officineParser.js'
 import { parseMedicielExcel } from '../utils/excelParser.js'
 import { parseOrderFile } from '../utils/orderParser.js'
 import { buildSearchIndex, searchMediciel } from '../utils/matching.js'
+import { makeEmptyDocument } from '../blDocument.js'
 
 const SOURCES = [
   { key: 'direct-export', label: 'Direct Export', hint: 'PDF natif du fournisseur' },
@@ -31,7 +32,7 @@ function signalement(p) {
   return null
 }
 
-function FileCard({ title, kind, kindTone, loading, loadingLabel, file, count, countLabel, error, accept, onFile, children }) {
+function FileCard({ title, kind, kindTone, loading, loadingLabel, file, count, countLabel, error, accept, onFile, onRemove, children }) {
   const [dragOver, setDragOver] = useState(false)
   const inputRef = useRef()
   const loaded = Boolean(file) && !error && !loading
@@ -55,19 +56,41 @@ function FileCard({ title, kind, kindTone, loading, loadingLabel, file, count, c
         <div style={{ fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-neutral-400)' }}>
           {title}
         </div>
-        {loaded && (
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: 'var(--color-accent-100)',
-              background: 'var(--color-accent-800)',
-              padding: '2px 9px',
-            }}
-          >
-            Lu
-          </span>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {loaded && (
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: 'var(--color-accent-100)',
+                background: 'var(--color-accent-800)',
+                padding: '2px 9px',
+              }}
+            >
+              Lu
+            </span>
+          )}
+          {onRemove && (
+            <button
+              onClick={onRemove}
+              title="Retirer ce BL"
+              style={{
+                width: 20,
+                height: 20,
+                flex: 'none',
+                border: '1px solid var(--color-divider)',
+                background: 'transparent',
+                color: 'var(--color-neutral-400)',
+                fontFamily: 'inherit',
+                fontSize: 12,
+                lineHeight: 1,
+                cursor: 'pointer',
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
       </div>
 
       <div
@@ -332,43 +355,36 @@ function ManualProductForm({ onAdd, onCancel, medicielProducts }) {
 
 const LINES_GRID = '28px minmax(0,1.3fr) 106px 48px 66px 80px 90px minmax(0,220px) 26px'
 
-export default function Step1Import({ data, onUpdate, onNext }) {
-  const [pdfLoading, setPdfLoading] = useState(false)
-  const [excelLoading, setExcelLoading] = useState(false)
-  const [orderLoading, setOrderLoading] = useState(false)
+const kicker = {
+  fontSize: 10.5,
+  letterSpacing: '.06em',
+  textTransform: 'uppercase',
+  color: 'var(--color-neutral-400)',
+}
+
+/**
+ * Une carte de BL — tout ce qui, avant le multi-BL, vivait une seule fois
+ * dans Step1Import (lecture du PDF, champs détectés, contrôle du total,
+ * lignes lues + ajout manuel) est ici scopé à UN document de `blDocuments`.
+ * Son état (chargement OCR, erreur, formulaire d'ajout, total ressaisi) est
+ * local au composant : chaque carte scanne/se corrige indépendamment des
+ * autres, y compris en parallèle.
+ */
+function BlDocumentCard({ doc, index, total, source, medicielProducts, onUpdate, onRemove, canRemove }) {
+  const [loading, setLoading] = useState(false)
   const [ocrProgress, setOcrProgress] = useState(null)
-  const [errors, setErrors] = useState({})
+  const [error, setError] = useState(null)
   const [showManualForm, setShowManualForm] = useState(false)
-  // Total facture ressaisi à la main — comparé à la somme des lignes lues
-  // pour révéler une ligne manquée ou un prix mal lu. Volontairement local
-  // (pas dans `data`) : c'est une aide à la relecture, pas une donnée qui
-  // sert plus loin dans le matching ou le prix.
   const [invoiceTotal, setInvoiceTotal] = useState('')
-
-  const source = data.source
-
-  const handleSourceChange = useCallback((newSource) => {
-    setErrors(e => ({ ...e, pdf: null }))
-    onUpdate({
-      source: newSource,
-      pdfFile: null,
-      blProducts: [],
-      matches: [],
-      invoiceNumber: '',
-      orderNumber: '',
-      blNumber: '',
-      supplierName: '',
-    })
-  }, [onUpdate])
 
   const handlePdf = useCallback(async (file) => {
     if (!file) return
     if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setErrors(e => ({ ...e, pdf: 'Veuillez sélectionner un fichier PDF.' }))
+      setError('Veuillez sélectionner un fichier PDF.')
       return
     }
-    setErrors(e => ({ ...e, pdf: null }))
-    setPdfLoading(true)
+    setError(null)
+    setLoading(true)
     setOcrProgress(null)
 
     try {
@@ -376,15 +392,14 @@ export default function Step1Import({ data, onUpdate, onNext }) {
       const parseFn = source === 'officine-france' ? parseOfficinePdf : parseBLPdf
       const result = await parseFn(file, onProgress)
       if (!result.products.length) {
-        setErrors(e => ({ ...e, pdf: 'Aucun produit trouvé dans le PDF. Vérifiez le format.' }))
-        setPdfLoading(false)
+        setError('Aucun produit trouvé dans le PDF. Vérifiez le format.')
+        setLoading(false)
         setOcrProgress(null)
         return
       }
       onUpdate({
         pdfFile: file,
         blProducts: result.products,
-        matches: [],
         invoiceNumber: result.invoiceNumber,
         orderNumber: result.orderNumber,
         blNumber: result.blNumber,
@@ -393,16 +408,375 @@ export default function Step1Import({ data, onUpdate, onNext }) {
         // "Direct Export") — une devinette best-effort pré-remplit le champ
         // manuel plutôt que de le laisser vide, sans jamais écraser une
         // saisie déjà faite.
-        ...(source === 'direct-export' && !data.supplierName && result.supplierNameGuess
+        ...(source === 'direct-export' && !doc.supplierName && result.supplierNameGuess
           ? { supplierName: result.supplierNameGuess }
           : {}),
       })
     } catch (err) {
-      setErrors(e => ({ ...e, pdf: `Erreur de lecture PDF : ${err.message}` }))
+      setError(`Erreur de lecture PDF : ${err.message}`)
     }
-    setPdfLoading(false)
+    setLoading(false)
     setOcrProgress(null)
-  }, [onUpdate, source, data.supplierName])
+  }, [source, doc.supplierName, onUpdate])
+
+  const handleAddManual = useCallback((product) => {
+    onUpdate({ blProducts: [...(doc.blProducts || []), product] })
+    setShowManualForm(false)
+  }, [doc.blProducts, onUpdate])
+
+  const handleRemoveProduct = useCallback((idx) => {
+    onUpdate({ blProducts: (doc.blProducts || []).filter((_, i) => i !== idx) })
+  }, [doc.blProducts, onUpdate])
+
+  // Éditable au blur, pas à chaque frappe — un champ contrôlé par une valeur
+  // numérique arrondie casse la saisie d'une décimale (le "." disparaît au
+  // re-rendu).
+  const handleEditProduct = useCallback((idx, field, value) => {
+    onUpdate({ blProducts: (doc.blProducts || []).map((p, i) => (i === idx ? { ...p, [field]: value } : p)) })
+  }, [doc.blProducts, onUpdate])
+
+  const pdfOk = doc.blProducts?.length > 0 && !error
+
+  const detected = [
+    ['N° facture', doc.invoiceNumber || '—'],
+    ['N° commande', doc.orderNumber || '—'],
+    ['N° BL', doc.blNumber || '—'],
+  ]
+
+  const linesTotal = useMemo(
+    () => (doc.blProducts || []).reduce((a, p) => a + p.qtyDelivered * p.priceEur, 0),
+    [doc.blProducts],
+  )
+  const invoiceTotalNum = parseFloat(invoiceTotal.replace(',', '.'))
+  const hasInvoiceTotal = Number.isFinite(invoiceTotalNum) && invoiceTotalNum > 0
+  const ecart = hasInvoiceTotal ? linesTotal - invoiceTotalNum : 0
+  const ecartSevere = hasInvoiceTotal && Math.abs(ecart) > 0.01
+
+  const signalCount = (doc.blProducts || []).filter((p) => signalement(p)).length
+  const pdfTitle = total > 1 ? `BL fournisseur — PDF (BL ${index + 1})` : 'BL fournisseur — PDF'
+
+  return (
+    <div>
+      <FileCard
+        title={pdfTitle}
+        kind="PDF"
+        kindTone="var(--color-error)"
+        accept=".pdf"
+        loading={loading}
+        loadingLabel={ocrProgress?.message || 'Lecture du PDF…'}
+        file={doc.pdfFile}
+        count={doc.blProducts?.length || 0}
+        countLabel="lignes détectées"
+        error={error}
+        onFile={handlePdf}
+        onRemove={canRemove ? onRemove : undefined}
+      >
+        {ocrProgress && loading && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ height: 5, background: 'var(--color-neutral-800)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', background: 'var(--color-warn)', width: `${ocrProgress.pct || 0}%`, transition: 'width .5s' }} />
+            </div>
+            <p style={{ fontSize: 11, color: 'var(--color-neutral-400)', marginTop: 6 }}>
+              Reconnaissance optique — comptez 30 à 60 secondes par page.
+            </p>
+          </div>
+        )}
+        {pdfOk && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: 'var(--color-divider)', border: '1px solid var(--color-divider)', marginTop: 12 }}>
+            <div style={{ background: 'var(--color-neutral-900)', padding: '8px 10px' }}>
+              <div style={{ fontSize: 10, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--color-neutral-500)' }}>
+                Fournisseur
+              </div>
+              {source === 'direct-export' ? (
+                <input
+                  type="text"
+                  value={doc.supplierName || ''}
+                  onChange={(e) => onUpdate({ supplierName: e.target.value })}
+                  placeholder="à saisir — pas toujours lisible"
+                  style={{
+                    width: '100%',
+                    marginTop: 2,
+                    padding: 0,
+                    border: 0,
+                    borderBottom: '1px dashed var(--color-neutral-600)',
+                    background: 'transparent',
+                    color: 'var(--color-text)',
+                    fontFamily: 'inherit',
+                    fontSize: 13,
+                  }}
+                />
+              ) : (
+                <div className="ell" style={{ fontSize: 13, marginTop: 2 }}>{doc.supplierName || 'Officine France'}</div>
+              )}
+            </div>
+            {detected.map(([label, value]) => (
+              <div key={label} style={{ background: 'var(--color-neutral-900)', padding: '8px 10px' }}>
+                <div style={{ fontSize: 10, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--color-neutral-500)' }}>{label}</div>
+                <div className="num ell" style={{ fontSize: 13, marginTop: 2 }}>
+                  {value}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </FileCard>
+
+      {pdfOk && (
+        <>
+          {/* Contrôle du total du BL — révèle une ligne manquée ou un prix mal
+              lu qu'une relecture ligne à ligne pourrait ne pas voir. */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 24,
+              marginTop: 16,
+              padding: '12px 16px',
+              border: '1px solid var(--color-divider)',
+              borderLeft: `3px solid ${ecartSevere ? 'var(--color-error)' : 'var(--color-divider)'}`,
+              background: 'var(--color-surface)',
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ flex: 'none' }}>
+              <div style={kicker}>Contrôle · total du BL</div>
+              <div className="num" style={{ fontSize: 13, marginTop: 3 }}>
+                {fmtEur2(linesTotal)} € <span style={{ color: 'var(--color-neutral-500)', fontWeight: 400 }}>lus sur {doc.blProducts.length} ligne{doc.blProducts.length > 1 ? 's' : ''}</span>
+              </div>
+            </div>
+            <div style={{ flex: 'none' }}>
+              <label style={{ display: 'block', fontSize: 10, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--color-neutral-500)', marginBottom: 3 }}>
+                Total facture — saisi à la main
+              </label>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={invoiceTotal}
+                onChange={(e) => setInvoiceTotal(e.target.value)}
+                placeholder="ex. 889,73"
+                className="num"
+                style={{
+                  width: 120,
+                  padding: '5px 8px',
+                  border: '1px solid var(--color-divider)',
+                  background: 'var(--color-bg)',
+                  color: 'var(--color-text)',
+                  fontFamily: 'inherit',
+                  fontSize: 13,
+                  textAlign: 'right',
+                }}
+              />
+            </div>
+            {hasInvoiceTotal && (
+              <div style={{ flex: 'none' }}>
+                <div style={kicker}>Écart</div>
+                <div className="num" style={{ fontSize: 15, fontWeight: 600, marginTop: 3, color: ecartSevere ? 'var(--color-error)' : 'var(--color-accent)' }}>
+                  {ecart > 0 ? '+' : ''}{fmtEur2(ecart)} €
+                </div>
+              </div>
+            )}
+            {ecartSevere && (
+              <div style={{ flex: 1, minWidth: 220, fontSize: 12, color: 'var(--color-error)', lineHeight: 1.5 }}>
+                Une ligne manquée ou un prix mal lu fausserait tous les prix en aval — vérifiez avant de lancer le matching.
+              </div>
+            )}
+          </div>
+
+          <div style={{ border: '1px solid var(--color-divider)', background: 'var(--color-surface)', marginTop: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 16px', background: 'var(--sticky-head)', borderBottom: '1px solid var(--color-divider)', flexWrap: 'wrap' }}>
+              <div style={{ fontFamily: 'var(--font-heading)', fontSize: 13.5, fontWeight: 600 }}>
+                Lignes lues sur le BL · {doc.blProducts.length}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--color-neutral-400)' }}>
+                {signalCount > 0
+                  ? `${signalCount} ligne${signalCount > 1 ? 's' : ''} signalée${signalCount > 1 ? 's' : ''} — corrigez ici, avant l'appariement`
+                  : "Une quantité ou un prix mal lus se corrigent ici, avant l'appariement"}
+              </div>
+              <button
+                onClick={() => setShowManualForm(v => !v)}
+                style={{
+                  padding: '6px 12px',
+                  border: '1px solid var(--color-divider)',
+                  background: 'transparent',
+                  color: 'var(--color-neutral-300)',
+                  fontFamily: 'inherit',
+                  fontSize: 11.5,
+                  cursor: 'pointer',
+                }}
+              >
+                {showManualForm ? 'Fermer' : '+ Ajouter une ligne'}
+              </button>
+            </div>
+
+            {showManualForm && (
+              <div style={{ padding: '0 16px' }}>
+                <ManualProductForm
+                  onAdd={handleAddManual}
+                  onCancel={() => setShowManualForm(false)}
+                  medicielProducts={medicielProducts}
+                />
+              </div>
+            )}
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: LINES_GRID,
+                gap: 10,
+                padding: '7px 16px',
+                fontSize: 10,
+                letterSpacing: '.06em',
+                textTransform: 'uppercase',
+                color: 'var(--color-neutral-500)',
+                borderBottom: '1px solid var(--color-divider)',
+              }}
+            >
+              <div>#</div>
+              <div>Désignation lue</div>
+              <div>CIP</div>
+              <div style={{ textAlign: 'right' }}>Cmd</div>
+              <div style={{ textAlign: 'right' }}>Qté</div>
+              <div style={{ textAlign: 'right' }}>PU €</div>
+              <div style={{ textAlign: 'right' }}>Total €</div>
+              <div>Signalement</div>
+              <div />
+            </div>
+
+            <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+              {doc.blProducts.map((p, idx) => {
+                const signal = signalement(p)
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: LINES_GRID,
+                      gap: 10,
+                      alignItems: 'center',
+                      padding: '6px 16px',
+                      fontSize: 12.5,
+                      borderBottom: '1px solid var(--color-divider)',
+                      background: signal ? `color-mix(in srgb, ${signal.tone} 7%, transparent)` : 'transparent',
+                      boxShadow: signal ? `inset 2px 0 0 ${signal.tone}` : 'none',
+                    }}
+                  >
+                    <div className="num" style={{ color: 'var(--color-neutral-500)' }}>{String(idx + 1).padStart(2, '0')}</div>
+                    <div className="ell">{p.designation}</div>
+                    <div className="num ell" style={{ fontSize: 11, color: 'var(--color-neutral-400)' }}>
+                      {String(p.cip).startsWith('MANUAL') ? 'Saisie manuelle' : p.cip}
+                    </div>
+                    <div className="num" style={{ textAlign: 'right', color: 'var(--color-neutral-400)' }}>{p.qtyOrdered}</div>
+                    <div style={{ textAlign: 'right' }}>
+                      <input
+                        type="number"
+                        min="0"
+                        key={`qty-${idx}`}
+                        defaultValue={p.qtyDelivered}
+                        onBlur={(e) => handleEditProduct(idx, 'qtyDelivered', parseInt(e.target.value, 10) || 0)}
+                        title="Corriger la quantité si mal lue"
+                        className="num"
+                        style={{
+                          width: '100%',
+                          padding: '3px 6px',
+                          textAlign: 'right',
+                          background: 'var(--color-neutral-900)',
+                          border: '1px solid var(--color-divider)',
+                          color: 'var(--color-text)',
+                          fontFamily: 'inherit',
+                          fontSize: 12.5,
+                        }}
+                      />
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        key={`price-${idx}`}
+                        defaultValue={p.priceEur}
+                        onBlur={(e) => handleEditProduct(idx, 'priceEur', parseFloat(e.target.value) || 0)}
+                        title="Corriger le prix d'achat si mal lu"
+                        className="num"
+                        style={{
+                          width: '100%',
+                          padding: '3px 6px',
+                          textAlign: 'right',
+                          background: 'var(--color-neutral-900)',
+                          border: '1px solid var(--color-divider)',
+                          color: 'var(--color-text)',
+                          fontFamily: 'inherit',
+                          fontSize: 12.5,
+                        }}
+                      />
+                    </div>
+                    <div className="num" style={{ textAlign: 'right', color: 'var(--color-neutral-300)' }}>
+                      {fmtEur2(p.qtyDelivered * p.priceEur)}
+                    </div>
+                    <div className="ell" style={{ fontSize: 11.5, color: signal ? signal.tone : 'var(--color-neutral-600)' }}>
+                      {signal ? signal.text : '—'}
+                    </div>
+                    <div>
+                      {p.etat === 'MANUAL' && (
+                        <button
+                          onClick={() => handleRemoveProduct(idx)}
+                          title="Supprimer"
+                          style={{
+                            width: 22,
+                            height: 22,
+                            border: '1px solid var(--color-divider)',
+                            background: 'transparent',
+                            color: 'var(--color-neutral-400)',
+                            fontFamily: 'inherit',
+                            fontSize: 13,
+                            lineHeight: 1,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+export default function Step1Import({ data, onUpdate, onNext }) {
+  const [excelLoading, setExcelLoading] = useState(false)
+  const [orderLoading, setOrderLoading] = useState(false)
+  const [errors, setErrors] = useState({})
+  const nextDocId = useRef(2)
+
+  const source = data.source
+  const blDocuments = data.blDocuments
+
+  const handleSourceChange = useCallback((newSource) => {
+    onUpdate({
+      source: newSource,
+      blDocuments: [makeEmptyDocument(1)],
+    })
+    nextDocId.current = 2
+  }, [onUpdate])
+
+  const updateDocument = useCallback((docId, patch) => {
+    onUpdate({ blDocuments: blDocuments.map((d) => (d.id === docId ? { ...d, ...patch } : d)) })
+  }, [blDocuments, onUpdate])
+
+  const handleAddDocument = useCallback(() => {
+    const id = nextDocId.current++
+    onUpdate({ blDocuments: [...blDocuments, makeEmptyDocument(id)] })
+  }, [blDocuments, onUpdate])
+
+  const handleRemoveDocument = useCallback((docId) => {
+    if (blDocuments.length <= 1) return
+    onUpdate({ blDocuments: blDocuments.filter((d) => d.id !== docId) })
+  }, [blDocuments, onUpdate])
 
   const handleOrder = useCallback(async (file) => {
     if (!file) return
@@ -432,64 +806,16 @@ export default function Step1Import({ data, onUpdate, onNext }) {
         setExcelLoading(false)
         return
       }
-      onUpdate({ excelFile: file, medicielProducts: products, matches: [] })
+      onUpdate({ excelFile: file, medicielProducts: products })
     } catch (err) {
       setErrors(e => ({ ...e, excel: `Erreur de lecture Excel : ${err.message}` }))
     }
     setExcelLoading(false)
   }, [onUpdate])
 
-  const handleAddManual = useCallback((product) => {
-    onUpdate({ blProducts: [...(data.blProducts || []), product], matches: [] })
-    setShowManualForm(false)
-  }, [data.blProducts, onUpdate])
-
-  const handleRemoveProduct = useCallback((idx) => {
-    onUpdate({ blProducts: (data.blProducts || []).filter((_, i) => i !== idx), matches: [] })
-  }, [data.blProducts, onUpdate])
-
-  // Une quantité ou un prix mal lus par l'OCR (ou une coquille du PDF natif)
-  // n'avaient jusqu'ici aucun correctif : la seule option en aval était
-  // d'exclure la ligne entière au matching, perdant le produit plutôt que
-  // de corriger la valeur. Éditable ici, avant que le matching et les prix
-  // ne s'appuient dessus. Validé au blur (pas à chaque frappe) : un champ
-  // contrôlé par une valeur numérique arrondie casse la saisie d'une
-  // décimale (le "." disparaît au re-rendu) — voir ManualProductForm, qui
-  // n'a jamais eu ce problème car son champ reste une chaîne locale.
-  const handleEditProduct = useCallback((idx, field, value) => {
-    onUpdate({
-      blProducts: (data.blProducts || []).map((p, i) => (i === idx ? { ...p, [field]: value } : p)),
-      matches: [],
-    })
-  }, [data.blProducts, onUpdate])
-
-  const pdfOk = data.blProducts?.length > 0 && !errors.pdf
+  const pdfOk = blDocuments.length > 0 && blDocuments.every((d) => d.blProducts?.length > 0)
   const excelOk = data.medicielProducts?.length > 0 && !errors.excel
   const canProceed = pdfOk && excelOk
-
-  const detected = [
-    ['N° facture', data.invoiceNumber || '—'],
-    ['N° commande', data.orderNumber || '—'],
-    ['N° BL', data.blNumber || '—'],
-  ]
-
-  const linesTotal = useMemo(
-    () => (data.blProducts || []).reduce((a, p) => a + p.qtyDelivered * p.priceEur, 0),
-    [data.blProducts],
-  )
-  const invoiceTotalNum = parseFloat(invoiceTotal.replace(',', '.'))
-  const hasInvoiceTotal = Number.isFinite(invoiceTotalNum) && invoiceTotalNum > 0
-  const ecart = hasInvoiceTotal ? linesTotal - invoiceTotalNum : 0
-  const ecartSevere = hasInvoiceTotal && Math.abs(ecart) > 0.01
-
-  const signalCount = (data.blProducts || []).filter((p) => signalement(p)).length
-
-  const kicker = {
-    fontSize: 10.5,
-    letterSpacing: '.06em',
-    textTransform: 'uppercase',
-    color: 'var(--color-neutral-400)',
-  }
 
   return (
     <div>
@@ -535,70 +861,45 @@ export default function Step1Import({ data, onUpdate, onNext }) {
         </div>
       ) : (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
-            <FileCard
-              title="BL fournisseur — PDF"
-              kind="PDF"
-              kindTone="var(--color-error)"
-              accept=".pdf"
-              loading={pdfLoading}
-              loadingLabel={ocrProgress?.message || 'Lecture du PDF…'}
-              file={data.pdfFile}
-              count={data.blProducts?.length || 0}
-              countLabel="lignes détectées"
-              error={errors.pdf}
-              onFile={handlePdf}
-            >
-              {ocrProgress && pdfLoading && (
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ height: 5, background: 'var(--color-neutral-800)', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', background: 'var(--color-warn)', width: `${ocrProgress.pct || 0}%`, transition: 'width .5s' }} />
-                  </div>
-                  <p style={{ fontSize: 11, color: 'var(--color-neutral-400)', marginTop: 6 }}>
-                    Reconnaissance optique — comptez 30 à 60 secondes par page.
-                  </p>
-                </div>
-              )}
-              {pdfOk && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: 'var(--color-divider)', border: '1px solid var(--color-divider)', marginTop: 12 }}>
-                  <div style={{ background: 'var(--color-neutral-900)', padding: '8px 10px' }}>
-                    <div style={{ fontSize: 10, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--color-neutral-500)' }}>
-                      Fournisseur
-                    </div>
-                    {source === 'direct-export' ? (
-                      <input
-                        type="text"
-                        value={data.supplierName || ''}
-                        onChange={(e) => onUpdate({ supplierName: e.target.value })}
-                        placeholder="à saisir — pas toujours lisible"
-                        style={{
-                          width: '100%',
-                          marginTop: 2,
-                          padding: 0,
-                          border: 0,
-                          borderBottom: '1px dashed var(--color-neutral-600)',
-                          background: 'transparent',
-                          color: 'var(--color-text)',
-                          fontFamily: 'inherit',
-                          fontSize: 13,
-                        }}
-                      />
-                    ) : (
-                      <div className="ell" style={{ fontSize: 13, marginTop: 2 }}>{data.supplierName || 'Officine France'}</div>
-                    )}
-                  </div>
-                  {detected.map(([label, value]) => (
-                    <div key={label} style={{ background: 'var(--color-neutral-900)', padding: '8px 10px' }}>
-                      <div style={{ fontSize: 10, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--color-neutral-500)' }}>{label}</div>
-                      <div className="num ell" style={{ fontSize: 13, marginTop: 2 }}>
-                        {value}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </FileCard>
+          <div style={{ ...kicker, marginBottom: 8 }}>
+            Bons de livraison{blDocuments.length > 1 ? ` · ${blDocuments.length}` : ''}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {blDocuments.map((doc, i) => (
+              <BlDocumentCard
+                key={doc.id}
+                doc={doc}
+                index={i}
+                total={blDocuments.length}
+                source={source}
+                medicielProducts={data.medicielProducts}
+                onUpdate={(patch) => updateDocument(doc.id, patch)}
+                onRemove={() => handleRemoveDocument(doc.id)}
+                canRemove={blDocuments.length > 1}
+              />
+            ))}
+          </div>
 
+          <button
+            onClick={handleAddDocument}
+            style={{
+              display: 'block',
+              width: '100%',
+              marginTop: 12,
+              padding: '10px 16px',
+              border: '1px dashed var(--color-divider)',
+              background: 'transparent',
+              color: 'var(--color-neutral-400)',
+              fontFamily: 'inherit',
+              fontSize: 12.5,
+              cursor: 'pointer',
+              textAlign: 'center',
+            }}
+          >
+            + Ajouter un BL — même livraison, mêmes frais partagés
+          </button>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 16 }}>
             <FileCard
               title="Base Médiciel — XLSX"
               kind="XLS"
@@ -633,234 +934,11 @@ export default function Step1Import({ data, onUpdate, onNext }) {
             >
               <div style={{ marginTop: 12, padding: 10, background: 'var(--color-neutral-900)', border: '1px solid var(--color-divider)', fontSize: 12.5, color: 'var(--color-neutral-300)', lineHeight: 1.5 }}>
                 {data.orderLines?.length
-                  ? `Commande ${data.bcOrderNumber ? `N° ${data.bcOrderNumber} ` : ''}${data.bcOrderDate ? `du ${data.bcOrderDate}` : ''} — sert à faire ressortir les ruptures (commandé mais pas livré) sur ce BL.`
-                  : "Le document envoyé au fournisseur avant ce BL. Sans lui, l'appli ne sait pas distinguer une rupture d'une simple substitution."}
+                  ? `Commande ${data.bcOrderNumber ? `N° ${data.bcOrderNumber} ` : ''}${data.bcOrderDate ? `du ${data.bcOrderDate}` : ''} — sert à faire ressortir les ruptures (commandé mais pas livré) sur cette livraison.`
+                  : "Le document envoyé au fournisseur avant cette livraison. Sans lui, l'appli ne sait pas distinguer une rupture d'une simple substitution."}
               </div>
             </FileCard>
           </div>
-
-          {pdfOk && (
-            <>
-              {/* Contrôle du total du BL — révèle une ligne manquée ou un prix mal
-                  lu qu'une relecture ligne à ligne pourrait ne pas voir. */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 24,
-                  marginTop: 16,
-                  padding: '12px 16px',
-                  border: '1px solid var(--color-divider)',
-                  borderLeft: `3px solid ${ecartSevere ? 'var(--color-error)' : 'var(--color-divider)'}`,
-                  background: 'var(--color-surface)',
-                  flexWrap: 'wrap',
-                }}
-              >
-                <div style={{ flex: 'none' }}>
-                  <div style={kicker}>Contrôle · total du BL</div>
-                  <div className="num" style={{ fontSize: 13, marginTop: 3 }}>
-                    {fmtEur2(linesTotal)} € <span style={{ color: 'var(--color-neutral-500)', fontWeight: 400 }}>lus sur {data.blProducts.length} ligne{data.blProducts.length > 1 ? 's' : ''}</span>
-                  </div>
-                </div>
-                <div style={{ flex: 'none' }}>
-                  <label style={{ display: 'block', fontSize: 10, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--color-neutral-500)', marginBottom: 3 }}>
-                    Total facture — saisi à la main
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={invoiceTotal}
-                    onChange={(e) => setInvoiceTotal(e.target.value)}
-                    placeholder="ex. 889,73"
-                    className="num"
-                    style={{
-                      width: 120,
-                      padding: '5px 8px',
-                      border: '1px solid var(--color-divider)',
-                      background: 'var(--color-bg)',
-                      color: 'var(--color-text)',
-                      fontFamily: 'inherit',
-                      fontSize: 13,
-                      textAlign: 'right',
-                    }}
-                  />
-                </div>
-                {hasInvoiceTotal && (
-                  <div style={{ flex: 'none' }}>
-                    <div style={kicker}>Écart</div>
-                    <div className="num" style={{ fontSize: 15, fontWeight: 600, marginTop: 3, color: ecartSevere ? 'var(--color-error)' : 'var(--color-accent)' }}>
-                      {ecart > 0 ? '+' : ''}{fmtEur2(ecart)} €
-                    </div>
-                  </div>
-                )}
-                {ecartSevere && (
-                  <div style={{ flex: 1, minWidth: 220, fontSize: 12, color: 'var(--color-error)', lineHeight: 1.5 }}>
-                    Une ligne manquée ou un prix mal lu fausserait tous les prix en aval — vérifiez avant de lancer le matching.
-                  </div>
-                )}
-              </div>
-
-              <div style={{ border: '1px solid var(--color-divider)', background: 'var(--color-surface)', marginTop: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 16px', background: 'var(--sticky-head)', borderBottom: '1px solid var(--color-divider)', flexWrap: 'wrap' }}>
-                  <div style={{ fontFamily: 'var(--font-heading)', fontSize: 13.5, fontWeight: 600 }}>
-                    Lignes lues sur le BL · {data.blProducts.length}
-                  </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--color-neutral-400)' }}>
-                    {signalCount > 0
-                      ? `${signalCount} ligne${signalCount > 1 ? 's' : ''} signalée${signalCount > 1 ? 's' : ''} — corrigez ici, avant l'appariement`
-                      : "Une quantité ou un prix mal lus se corrigent ici, avant l'appariement"}
-                  </div>
-                  <button
-                    onClick={() => setShowManualForm(v => !v)}
-                    style={{
-                      padding: '6px 12px',
-                      border: '1px solid var(--color-divider)',
-                      background: 'transparent',
-                      color: 'var(--color-neutral-300)',
-                      fontFamily: 'inherit',
-                      fontSize: 11.5,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {showManualForm ? 'Fermer' : '+ Ajouter une ligne'}
-                  </button>
-                </div>
-
-                {showManualForm && (
-                  <div style={{ padding: '0 16px' }}>
-                    <ManualProductForm
-                      onAdd={handleAddManual}
-                      onCancel={() => setShowManualForm(false)}
-                      medicielProducts={data.medicielProducts}
-                    />
-                  </div>
-                )}
-
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: LINES_GRID,
-                    gap: 10,
-                    padding: '7px 16px',
-                    fontSize: 10,
-                    letterSpacing: '.06em',
-                    textTransform: 'uppercase',
-                    color: 'var(--color-neutral-500)',
-                    borderBottom: '1px solid var(--color-divider)',
-                  }}
-                >
-                  <div>#</div>
-                  <div>Désignation lue</div>
-                  <div>CIP</div>
-                  <div style={{ textAlign: 'right' }}>Cmd</div>
-                  <div style={{ textAlign: 'right' }}>Qté</div>
-                  <div style={{ textAlign: 'right' }}>PU €</div>
-                  <div style={{ textAlign: 'right' }}>Total €</div>
-                  <div>Signalement</div>
-                  <div />
-                </div>
-
-                <div style={{ maxHeight: 380, overflowY: 'auto' }}>
-                  {data.blProducts.map((p, idx) => {
-                    const signal = signalement(p)
-                    return (
-                      <div
-                        key={idx}
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: LINES_GRID,
-                          gap: 10,
-                          alignItems: 'center',
-                          padding: '6px 16px',
-                          fontSize: 12.5,
-                          borderBottom: '1px solid var(--color-divider)',
-                          background: signal ? `color-mix(in srgb, ${signal.tone} 7%, transparent)` : 'transparent',
-                          boxShadow: signal ? `inset 2px 0 0 ${signal.tone}` : 'none',
-                        }}
-                      >
-                        <div className="num" style={{ color: 'var(--color-neutral-500)' }}>{String(idx + 1).padStart(2, '0')}</div>
-                        <div className="ell">{p.designation}</div>
-                        <div className="num ell" style={{ fontSize: 11, color: 'var(--color-neutral-400)' }}>
-                          {String(p.cip).startsWith('MANUAL') ? 'Saisie manuelle' : p.cip}
-                        </div>
-                        <div className="num" style={{ textAlign: 'right', color: 'var(--color-neutral-400)' }}>{p.qtyOrdered}</div>
-                        <div style={{ textAlign: 'right' }}>
-                          <input
-                            type="number"
-                            min="0"
-                            key={`qty-${idx}`}
-                            defaultValue={p.qtyDelivered}
-                            onBlur={(e) => handleEditProduct(idx, 'qtyDelivered', parseInt(e.target.value, 10) || 0)}
-                            title="Corriger la quantité si mal lue"
-                            className="num"
-                            style={{
-                              width: '100%',
-                              padding: '3px 6px',
-                              textAlign: 'right',
-                              background: 'var(--color-neutral-900)',
-                              border: '1px solid var(--color-divider)',
-                              color: 'var(--color-text)',
-                              fontFamily: 'inherit',
-                              fontSize: 12.5,
-                            }}
-                          />
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            key={`price-${idx}`}
-                            defaultValue={p.priceEur}
-                            onBlur={(e) => handleEditProduct(idx, 'priceEur', parseFloat(e.target.value) || 0)}
-                            title="Corriger le prix d'achat si mal lu"
-                            className="num"
-                            style={{
-                              width: '100%',
-                              padding: '3px 6px',
-                              textAlign: 'right',
-                              background: 'var(--color-neutral-900)',
-                              border: '1px solid var(--color-divider)',
-                              color: 'var(--color-text)',
-                              fontFamily: 'inherit',
-                              fontSize: 12.5,
-                            }}
-                          />
-                        </div>
-                        <div className="num" style={{ textAlign: 'right', color: 'var(--color-neutral-300)' }}>
-                          {fmtEur2(p.qtyDelivered * p.priceEur)}
-                        </div>
-                        <div className="ell" style={{ fontSize: 11.5, color: signal ? signal.tone : 'var(--color-neutral-600)' }}>
-                          {signal ? signal.text : '—'}
-                        </div>
-                        <div>
-                          {p.etat === 'MANUAL' && (
-                            <button
-                              onClick={() => handleRemoveProduct(idx)}
-                              title="Supprimer"
-                              style={{
-                                width: 22,
-                                height: 22,
-                                border: '1px solid var(--color-divider)',
-                                background: 'transparent',
-                                color: 'var(--color-neutral-400)',
-                                fontFamily: 'inherit',
-                                fontSize: 13,
-                                lineHeight: 1,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              ×
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            </>
-          )}
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
             <button
@@ -877,7 +955,7 @@ export default function Step1Import({ data, onUpdate, onNext }) {
                 cursor: canProceed ? 'pointer' : 'not-allowed',
               }}
             >
-              {canProceed ? 'Lancer le matching →' : 'Chargez les deux fichiers'}
+              {canProceed ? 'Lancer le matching →' : blDocuments.length > 1 ? 'Chargez tous les BL et la base Médiciel' : 'Chargez les deux fichiers'}
             </button>
           </div>
         </>

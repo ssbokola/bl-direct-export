@@ -34,9 +34,7 @@ export default function BlSession({
   orderLines,
   supplierName,
   supplierSource,
-  invoiceNumber,
-  orderNumber,
-  blNumber,
+  blDocuments,
   history,
   compare,
   onToggleCompare,
@@ -50,7 +48,7 @@ export default function BlSession({
   const [query, setQuery] = useState('')
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [firstRow, setFirstRow] = useState(0)
-  const [downloaded, setDownloaded] = useState(false)
+  const [downloaded, setDownloaded] = useState({})
   usePaletteShortcut(setPaletteOpen)
   const { away, dismiss: dismissAway } = useAwayDetection(ws.step === 2)
 
@@ -166,6 +164,7 @@ export default function BlSession({
     () =>
       ws.priced.map((p) => ({
         idx: p.idx,
+        blDocId: p.blDocId,
         code: p.code,
         produit: p.med,
         cmd: p.qtyOrdered,
@@ -180,18 +179,58 @@ export default function BlSession({
     [ws],
   )
 
-  const filename = `FACTURE-YOP-${invoiceNumber || blNumber || 'SANS-REF'}.xlsx`
+  // Chaîne jointe pour l'AFFICHAGE seul (recap, méta des ruptures, résumé
+  // d'historique local) — jamais réinjectée dans Supabase : buildBlFacts,
+  // plus bas, résout la vraie référence par ligne via blDocId.
+  const joinRefs = (values) => {
+    const uniq = [...new Set(values.filter(Boolean))]
+    return uniq.length ? uniq.join(' + ') : 'SANS-REF'
+  }
+  const combinedBlReference = useMemo(
+    () => joinRefs(blDocuments.map((d) => d.invoiceNumber || d.blNumber)),
+    [blDocuments],
+  )
+  const combinedOrderNumber = useMemo(
+    () => joinRefs(blDocuments.map((d) => d.orderNumber)),
+    [blDocuments],
+  )
+
+  // Un fichier XLSX par BL d'origine — les prix/frais sont calculés ensemble
+  // (partagés, voir fraisPostes/fraisTotal dans useBlWorkspace.js) mais
+  // chaque BL garde son propre fichier, comme s'il avait été traité seul.
+  // Une ligne sans blDocId (ajoutée à la main pendant le Matching — voir
+  // addManual dans useBlWorkspace.js, jamais rattachée à un document
+  // d'origine) part dans le fichier du premier BL plutôt que d'être perdue.
+  const exportFiles = useMemo(
+    () =>
+      blDocuments.map((doc, i) => {
+        const rows = exportRows.filter((r) => (r.blDocId ?? blDocuments[0].id) === doc.id)
+        const ref = doc.invoiceNumber || doc.blNumber || 'SANS-REF'
+        return {
+          id: doc.id,
+          label: blDocuments.length > 1 ? `BL ${i + 1}` : null,
+          filename: `FACTURE-YOP-${ref}.xlsx`,
+          fileMeta: `${rows.reduce((a, r) => a + r.livre, 0)} unités · ${fmtF(rows.reduce((a, r) => a + r.pa * r.livre, 0))} F de coût de revient`,
+          rows,
+          invoiceNumber: doc.invoiceNumber,
+          orderNumber: doc.orderNumber,
+        }
+      }),
+    [blDocuments, exportRows],
+  )
 
   // Désignation + quantité manquante, sans prix — pour relancer le
   // fournisseur ou repasser commande ailleurs. Disponible dès la fin du
   // Matching (ws.lines porte déjà hasOrderDoc/enRupture/qtyCommandee), pas
-  // besoin d'attendre la conversion des prix.
+  // besoin d'attendre la conversion des prix. Reste combiné pour toute la
+  // livraison — voir ruptureExport.js, une ligne de BC absente n'a par
+  // nature aucun blDocId auquel l'attribuer.
   const ruptureRows = useMemo(() => buildRuptureList(ws.lines, orderLines), [ws.lines, orderLines])
   const ruptureMeta = useMemo(
-    () => ({ supplierName, blReference: invoiceNumber || blNumber || 'SANS-REF' }),
-    [supplierName, invoiceNumber, blNumber],
+    () => ({ supplierName, blReference: combinedBlReference }),
+    [supplierName, combinedBlReference],
   )
-  const ruptureFilenameBase = `RUPTURES-${invoiceNumber || blNumber || 'SANS-REF'}`
+  const ruptureFilenameBase = `RUPTURES-${combinedBlReference}`
   const handleDownloadRuptureExcel = useCallback(
     () => downloadRuptureExcel(ruptureRows, ruptureMeta, `${ruptureFilenameBase}.xlsx`),
     [ruptureRows, ruptureMeta, ruptureFilenameBase],
@@ -204,7 +243,7 @@ export default function BlSession({
   const buildRecap = useCallback(
     () => [
       { label: 'Fournisseur', value: supplierName },
-      { label: 'N° commande', value: orderNumber || '—' },
+      { label: 'N° commande', value: combinedOrderNumber === 'SANS-REF' ? '—' : combinedOrderNumber },
       { label: 'Lignes exportées', value: String(exportRows.length) },
       { label: 'Montant BL', value: fmtEur(ws.totals.totalEur) },
       { label: 'Total PA', value: `${fmtF(ws.totals.totalPA)} F` },
@@ -213,36 +252,46 @@ export default function BlSession({
       { label: 'Marge globale', value: `${ws.totals.marge.toFixed(1)} %` },
       { label: 'Taux · coeff', value: `${fmtF(ws.taux)} · ×${ws.coefficient.toFixed(2).replace('.', ',')}` },
     ],
-    [supplierName, orderNumber, exportRows.length, ws.totals, ws.taux, ws.coefficient],
+    [supplierName, combinedOrderNumber, exportRows.length, ws.totals, ws.taux, ws.coefficient],
   )
 
   // Une ligne par produit livré, pas un résumé — voir supplierStats.js. Le
   // même point que la ligne d'historique locale : la fin de l'export, seul
   // moment où prix, rupture et fournisseur sont tous confirmés.
+  //
+  // bl_reference DOIT être résolu par ligne via blDocId, jamais une chaîne
+  // jointe : supplier_reliability (supabase-setup-bl-lines.sql) fait
+  // count(distinct bl_reference) as nb_bl — une chaîne jointe compterait une
+  // session à 2 BL comme une seule livraison, faussant durablement le
+  // rapport fournisseurs.
   const buildBlFacts = useCallback(
     () => {
-      const blReference = invoiceNumber || blNumber || 'SANS-REF'
-      return ws.priced.map((p) => ({
-        bl_reference: blReference,
-        supplier_name: supplierName,
-        supplier_source: supplierSource || null,
-        order_number: orderNumber || null,
-        cip: p.cip,
-        code_mediciel: p.code,
-        designation: p.med || p.label,
-        qty_commandee: p.qtyCommandee,
-        qty_livree: p.qty,
-        has_order_doc: p.hasOrderDoc,
-        en_rupture: p.enRupture,
-        taux_rupture_pct: p.tauxRupturePct || null,
-        prix_achat_eur: p.eur,
-        prix_achat_fcfa: p.pa,
-        prix_revient_fcfa: p.prt,
-        prix_vente_fcfa: ws.pvOf(p),
-        taux_change: ws.taux,
-      }))
+      const docById = new Map(blDocuments.map((d) => [d.id, d]))
+      const fallbackDoc = blDocuments[0]
+      return ws.priced.map((p) => {
+        const doc = docById.get(p.blDocId) || fallbackDoc
+        return {
+          bl_reference: doc?.invoiceNumber || doc?.blNumber || 'SANS-REF',
+          supplier_name: supplierName,
+          supplier_source: supplierSource || null,
+          order_number: doc?.orderNumber || null,
+          cip: p.cip,
+          code_mediciel: p.code,
+          designation: p.med || p.label,
+          qty_commandee: p.qtyCommandee,
+          qty_livree: p.qty,
+          has_order_doc: p.hasOrderDoc,
+          en_rupture: p.enRupture,
+          taux_rupture_pct: p.tauxRupturePct || null,
+          prix_achat_eur: p.eur,
+          prix_achat_fcfa: p.pa,
+          prix_revient_fcfa: p.prt,
+          prix_vente_fcfa: ws.pvOf(p),
+          taux_change: ws.taux,
+        }
+      })
     },
-    [ws, invoiceNumber, blNumber, supplierName, supplierSource, orderNumber],
+    [ws, blDocuments, supplierName, supplierSource],
   )
 
   // — L'export prend tout l'écran dès qu'on l'atteint, quel que soit l'onglet interne.
@@ -254,13 +303,14 @@ export default function BlSession({
         rows={exportRows}
         excluded={excludedLines}
         recap={buildRecap()}
-        filename={filename}
-        fileMeta={`${exportRows.reduce((a, r) => a + r.livre, 0)} unités · ${fmtF(ws.totals.totalPRT)} F de coût de revient`}
-        downloaded={downloaded}
-        onDownload={() => {
-          downloadExport(exportRows, invoiceNumber, orderNumber, filename)
-          setDownloaded(true)
-        }}
+        files={exportFiles.map((f) => ({
+          ...f,
+          downloaded: Boolean(downloaded[f.id]),
+          onDownload: () => {
+            downloadExport(f.rows, f.invoiceNumber, f.orderNumber, f.filename)
+            setDownloaded((d) => ({ ...d, [f.id]: true }))
+          },
+        }))}
         ruptureCount={ruptureRows.length}
         onDownloadRuptureExcel={handleDownloadRuptureExcel}
         onDownloadRupturePdf={handleDownloadRupturePdf}
@@ -269,7 +319,7 @@ export default function BlSession({
           writeBlFacts(buildBlFacts())
           onFullExit({
             supplier: supplierName,
-            facture: invoiceNumber,
+            facture: combinedBlReference,
             lignes: ws.lines.length,
             exclues: excludedLines.length,
             eur: ws.totals.totalEur,
@@ -288,7 +338,7 @@ export default function BlSession({
       <HomeScreen
         current={{
           supplier: supplierName,
-          facture: invoiceNumber,
+          facture: combinedBlReference,
           lignes: ws.lines.length,
           resolved: ws.resolved,
           stepLabel: ws.step === 2 ? 'Matching' : ws.step === 3 ? 'Conversion' : 'Validation',
@@ -332,6 +382,7 @@ export default function BlSession({
             const row = Math.floor(e.target.scrollTop / 42)
             if (row !== firstRow) setFirstRow(row)
           }}
+          footer={ws.step === 2 && <AutoAcceptBanner count={ws.autoCount} onAccept={ws.acceptAuto} />}
           rows={ws.visible.map((line) => {
             const priced = ws.priced.find((p) => p.idx === line.idx)
             return (

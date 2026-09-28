@@ -3,6 +3,7 @@ import BlSession from './components/BlSession.jsx'
 import { ArchiveScreen } from './components/ExportScreen.jsx'
 import { HomeScreen } from './components/HomeScreen.jsx'
 import ImportScreen from './components/ImportScreen.jsx'
+import { makeEmptyDocument } from './blDocument.js'
 import { SupplierReliability } from './components/SupplierReliability.jsx'
 import { fmtF } from './blConstants.js'
 import { addHistoryEntry, loadHistory } from './utils/history.js'
@@ -10,20 +11,14 @@ import { buildWorkspaceLines } from './workspaceAdapters.js'
 
 function makeInitialImportData() {
   return {
-    pdfFile: null,
     excelFile: null,
     orderFile: null,
-    blProducts: [],
     medicielProducts: [],
     orderLines: null,
-    invoiceNumber: '',
-    orderNumber: '',
     bcOrderNumber: '',
     bcOrderDate: '',
-    blNumber: '',
     source: '',
-    supplierName: '',
-    matches: [],
+    blDocuments: [makeEmptyDocument(1)],
   }
 }
 
@@ -57,16 +52,22 @@ export default function App() {
   }, [])
 
   const beginMatching = useCallback(async () => {
-    const lines = await buildWorkspaceLines(importData.blProducts, importData.medicielProducts, importData.orderLines)
+    const lines = await buildWorkspaceLines(importData.blDocuments, importData.medicielProducts, importData.orderLines)
+    // Une seule livraison, un seul fournisseur (hypothèse actée pour le
+    // multi-BL) — supplierName/supplierSource restent scalaires, dérivés du
+    // premier document et de la source globale.
     setWorkData({
       lines,
       medicielProducts: importData.medicielProducts,
       orderLines: importData.orderLines,
-      supplierName: importData.supplierName || 'Fournisseur non renseigné',
+      supplierName: importData.blDocuments[0]?.supplierName || 'Fournisseur non renseigné',
       supplierSource: importData.source,
-      invoiceNumber: importData.invoiceNumber,
-      orderNumber: importData.orderNumber,
-      blNumber: importData.blNumber,
+      blDocuments: importData.blDocuments.map(({ id, invoiceNumber, orderNumber, blNumber }) => ({
+        id,
+        invoiceNumber,
+        orderNumber,
+        blNumber,
+      })),
     })
     setSessionId((id) => id + 1)
     setScreen('bl')
@@ -136,9 +137,7 @@ export default function App() {
         orderLines={workData.orderLines}
         supplierName={workData.supplierName}
         supplierSource={workData.supplierSource}
-        invoiceNumber={workData.invoiceNumber}
-        orderNumber={workData.orderNumber}
-        blNumber={workData.blNumber}
+        blDocuments={workData.blDocuments}
         history={history}
         compare={compare}
         onToggleCompare={toggleCompare}

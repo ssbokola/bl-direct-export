@@ -12,7 +12,7 @@ import { GRID, STATUS, fmtEur, fmtF } from '../blConstants'
  * (--sticky-head) : un fond translucide laisserait passer les lignes qui
  * défilent dessous.
  */
-export function WorkTable({ rows, paLive, pvLive, firstVisible, onScroll, children }) {
+export function WorkTable({ rows, paLive, pvLive, firstVisible, onScroll, children, footer }) {
   const ghost = { color: 'var(--color-neutral-800)' }
 
   return (
@@ -85,6 +85,8 @@ export function WorkTable({ rows, paLive, pvLive, firstVisible, onScroll, childr
           {rows}
         </div>
       </div>
+
+      {footer && <div style={{ marginTop: 12 }}>{footer}</div>}
     </div>
   )
 }
