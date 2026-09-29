@@ -1,5 +1,4 @@
 import { matchOrderToDelivery } from './matching.js'
-import { downloadBlob, generateRuptureXlsxBlob } from './csvGenerator.js'
 
 /**
  * La liste des ruptures « exploitable » : désignation + quantité manquante,
@@ -9,25 +8,31 @@ import { downloadBlob, generateRuptureXlsxBlob } from './csvGenerator.js'
  * lignes du bon de commande jamais apparues du tout sur ce BL — la rupture la
  * plus sévère, et invisible ailleurs dans l'appli puisqu'aucune ligne de
  * travail n'existe pour un produit purement absent de la livraison.
+ *
+ * `matchStatus` ('warning' | null) porte la confiance du rapprochement
+ * BC↔BL (voir matchOrderToDelivery) — une rupture "absente" n'a par nature
+ * aucune ligne de travail à laquelle rattacher une confiance, `null` plutôt
+ * qu'une note inventée.
  */
 export function buildRuptureList(lines, orderLines) {
   const partial = lines
     .filter((l) => l.hasOrderDoc && l.enRupture)
-    .map((l) => ({ designation: l.med || l.label, manquant: l.qtyCommandee - l.qty }))
+    .map((l) => ({ designation: l.med || l.label, manquant: l.qtyCommandee - l.qty, matchStatus: l.ruptureMatchStatus || null }))
 
   const absent = orderLines?.length
     ? matchOrderToDelivery(orderLines, lines)
         .filter((m) => !m.workspaceLine)
-        .map((m) => ({ designation: m.orderLine.designation, manquant: m.orderLine.qtyCommandee }))
+        .map((m) => ({ designation: m.orderLine.designation, manquant: m.orderLine.qtyCommandee, matchStatus: null }))
     : []
 
   return [...partial, ...absent].sort((a, b) => a.designation.localeCompare(b.designation, 'fr'))
 }
 
 const PDF_MARGIN_X = 14
-const PDF_QTY_X = 165
+const PDF_QTY_X = 155
+const PDF_CONF_X = 180
 const PDF_PAGE_BOTTOM = 280
-const PDF_MAX_LABEL_CHARS = 60
+const PDF_MAX_LABEL_CHARS = 55
 
 // Chargé à la demande — jspdf entraîne html2canvas dans son propre chunk
 // (inutile ici, on ne dessine que du texte), pas la peine de l'alourdir sur
@@ -52,6 +57,7 @@ async function generateRupturePdfBlob(rows, meta) {
   doc.setFontSize(11)
   doc.text('Désignation', PDF_MARGIN_X, y)
   doc.text('Qté manquante', PDF_QTY_X, y)
+  doc.text('Confiance', PDF_CONF_X, y)
   y += 2
   doc.setLineWidth(0.2)
   doc.line(PDF_MARGIN_X, y, 196, y)
@@ -69,16 +75,24 @@ async function generateRupturePdfBlob(rows, meta) {
         : row.designation
     doc.text(label, PDF_MARGIN_X, y)
     doc.text(String(row.manquant), PDF_QTY_X, y)
+    if (row.matchStatus === 'warning') doc.text('À vérifier', PDF_CONF_X, y)
     y += 6.5
   }
 
   return doc.output('blob')
 }
 
-export function downloadRuptureExcel(rows, meta, filename) {
+// Chargé à la demande — même raison que jspdf plus haut : xlsx n'a pas à
+// peser sur le chargement initial pour une action occasionnelle.
+export async function downloadRuptureExcel(rows, meta, filename) {
+  const { downloadBlob, generateRuptureXlsxBlob } = await import('./csvGenerator.js')
   downloadBlob(generateRuptureXlsxBlob(rows, meta), filename)
 }
 
 export async function downloadRupturePdf(rows, meta, filename) {
-  downloadBlob(await generateRupturePdfBlob(rows, meta), filename)
+  const [{ downloadBlob }, blob] = await Promise.all([
+    import('./csvGenerator.js'),
+    generateRupturePdfBlob(rows, meta),
+  ])
+  downloadBlob(blob, filename)
 }

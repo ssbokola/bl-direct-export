@@ -306,8 +306,8 @@ export default function BlSession({
         files={exportFiles.map((f) => ({
           ...f,
           downloaded: Boolean(downloaded[f.id]),
-          onDownload: () => {
-            downloadExport(f.rows, f.invoiceNumber, f.orderNumber, f.filename)
+          onDownload: async () => {
+            await downloadExport(f.rows, f.invoiceNumber, f.orderNumber, f.filename)
             setDownloaded((d) => ({ ...d, [f.id]: true }))
           },
         }))}

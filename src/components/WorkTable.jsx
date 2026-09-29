@@ -180,8 +180,24 @@ export function WorkRow({
                 } u · ${fmtEur(line.eur)}`}
           </div>
           {line.hasOrderDoc && line.enRupture && (
-            <div className="num" style={{ fontSize: 10.5, color: 'var(--color-error)', marginTop: 2 }}>
-              Rupture — {line.qtyCommandee} commandés, {line.qty} livrés
+            <div
+              className="num"
+              style={{ fontSize: 10.5, color: 'var(--color-error)', marginTop: 2, display: 'flex', gap: 6, alignItems: 'center' }}
+            >
+              <span>Rupture — {line.qtyCommandee} commandés, {line.qty} livrés</span>
+              {line.ruptureMatchStatus === 'warning' && (
+                <span
+                  style={{
+                    padding: '1px 6px',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: 9.5,
+                    background: STATUS.warning.bg,
+                    color: STATUS.warning.fg,
+                  }}
+                >
+                  {STATUS.warning.label}
+                </span>
+              )}
             </div>
           )}
         </div>

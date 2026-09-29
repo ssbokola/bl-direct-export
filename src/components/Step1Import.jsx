@@ -1,8 +1,4 @@
 import { useState, useCallback, useRef, useMemo } from 'react'
-import { parseBLPdf } from '../utils/pdfParser.js'
-import { parseOfficinePdf } from '../utils/officineParser.js'
-import { parseMedicielExcel } from '../utils/excelParser.js'
-import { parseOrderFile } from '../utils/orderParser.js'
 import { buildSearchIndex, searchMediciel } from '../utils/matching.js'
 import { makeEmptyDocument } from '../blDocument.js'
 
@@ -389,7 +385,12 @@ function BlDocumentCard({ doc, index, total, source, medicielProducts, onUpdate,
 
     try {
       const onProgress = source === 'officine-france' ? (p) => setOcrProgress(p) : undefined
-      const parseFn = source === 'officine-france' ? parseOfficinePdf : parseBLPdf
+      // Chargés à la demande — pdfjs-dist (les deux) et surtout tesseract.js
+      // (Officine France seule) n'ont pas à peser sur le chargement initial
+      // d'une session qui n'en aura peut-être jamais besoin.
+      const parseFn = source === 'officine-france'
+        ? (await import('../utils/officineParser.js')).parseOfficinePdf
+        : (await import('../utils/pdfParser.js')).parseBLPdf
       const result = await parseFn(file, onProgress)
       if (!result.products.length) {
         setError('Aucun produit trouvé dans le PDF. Vérifiez le format.')
@@ -783,6 +784,9 @@ export default function Step1Import({ data, onUpdate, onNext }) {
     setErrors(e => ({ ...e, order: null }))
     setOrderLoading(true)
     try {
+      // orderParser.js embarque pdfjs-dist ET xlsx (les deux formats de BC) —
+      // le BC est facultatif, pas la peine de charger ça sans qu'on en dépose un.
+      const { parseOrderFile } = await import('../utils/orderParser.js')
       const result = await parseOrderFile(file)
       onUpdate({ orderFile: file, orderLines: result.lines, bcOrderNumber: result.orderNumber, bcOrderDate: result.orderDate })
     } catch (err) {
@@ -800,6 +804,7 @@ export default function Step1Import({ data, onUpdate, onNext }) {
     setErrors(e => ({ ...e, excel: null }))
     setExcelLoading(true)
     try {
+      const { parseMedicielExcel } = await import('../utils/excelParser.js')
       const products = await parseMedicielExcel(file)
       if (!products.length) {
         setErrors(e => ({ ...e, excel: 'Aucun produit trouvé. Vérifiez que les en-têtes sont à la ligne 8.' }))

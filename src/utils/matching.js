@@ -216,24 +216,29 @@ export function autoMatch(blProducts, medicielProducts, matchMemory = {}) {
   })
 }
 
+// Le premier token significatif est le nom de la molécule (DCI) — le plus
+// important pour apparier (ex. GAVISCON matche GAVISCONELLE et vice versa,
+// préfixe dans les deux sens). Partagé par matchOne (BL↔catalogue Médiciel)
+// et matchOrderToDelivery (BC↔BL) : même notion de "même produit probable",
+// deux matchers différents.
+function getDciToken(normalized) {
+  const tokens = tokenize(normalized)
+  return tokens.length > 0 ? tokens[0] : ''
+}
+
+function dciMatch(a, b) {
+  return Boolean(a && b && (a.startsWith(b) || b.startsWith(a)))
+}
+
 function matchOne(blProduct, normalizedInternals) {
   const supplierNorm = normalizeLabel(blProduct.designation)
-  const supplierTokens = tokenize(supplierNorm)
-  // The first significant token is the drug name (DCI) — most important for matching
-  const dciToken = supplierTokens.length > 0 ? supplierTokens[0] : ''
+  const dciToken = getDciToken(supplierNorm)
 
   const scored = normalizedInternals
     .map(internal => {
       const score = computeScore(supplierNorm, internal.normalized)
-
-      // Check if the DCI (first word) matches: prefix match only
-      // e.g. GAVISCON matches GAVISCONELLE and vice versa
-      const internalTokens = tokenize(internal.normalized)
-      const internalDci = internalTokens.length > 0 ? internalTokens[0] : ''
-      const dciMatches = dciToken && internalDci && (
-        dciToken.startsWith(internalDci) ||
-        internalDci.startsWith(dciToken)
-      )
+      const internalDci = getDciToken(internal.normalized)
+      const dciMatches = dciMatch(dciToken, internalDci)
 
       return {
         product: internal.product,
@@ -287,12 +292,34 @@ function matchOne(blProduct, normalizedInternals) {
  * `workspaceLines` doit déjà être passé par autoMatch() — voir
  * workspaceAdapters.js. Une ligne du BL n'est jamais rapprochée de deux
  * lignes de BC différentes (`used`), pour ne pas doubler une rupture par
- * erreur de correspondance floue.
+ * erreur de correspondance floue. Assignation gloutonne (ordre du BC, pas
+ * un optimum global) — une ligne de BC antérieure peut "voler" la meilleure
+ * correspondance à une ligne suivante. Risque faible et accepté : les BC
+ * réels restent courts (<100 lignes), et une ligne "volée" reste quand même
+ * signalée (comme "absente" plutôt que "partielle"), jamais silencieusement
+ * perdue.
  *
- * Retourne un tableau { orderLine, workspaceLine, matched } — une entrée
- * par ligne du BC ; `workspaceLine` vaut `null` si rien ne correspond dans
- * le BL (rupture totale : commandé, jamais livré sur ce BL).
+ * Retourne un tableau { orderLine, workspaceLine, matched, score,
+ * matchStatus } — une entrée par ligne du BC ; `workspaceLine` vaut `null`
+ * si rien ne correspond dans le BL (rupture totale : commandé, jamais livré
+ * sur ce BL). `score`/`matchStatus` ('auto' | 'warning') ne sont définis que
+ * quand `matched` est vrai — la confiance du rapprochement lui-même, pas la
+ * sévérité de la rupture (voir tauxRupturePct dans workspaceAdapters.js).
+ *
+ * Paliers volontairement différents de matchOne (0.6/0.3) : les deux côtés
+ * ici sont du texte "façon fournisseur" (BC et BL), pas BL-vs-catalogue
+ * propre, donc un vrai match peut légitimement scorer plus bas — le plancher
+ * de détection descend donc à 0.40 (au lieu de 0.5) pour repérer plus de
+ * ruptures réelles. Mais il n'existe aucune étape de confirmation humaine
+ * après coup (contrairement au palier 'warning' de matchOne, qui affiche
+ * Confirmer/Modifier) — la barre du palier 'auto' est donc relevée à 0.65
+ * plutôt que reprendre 0.6, pour ne faire confiance sans étiquette qu'aux
+ * correspondances vraiment solides.
  */
+const ORDER_AUTO_THRESHOLD = 0.65
+const ORDER_WARNING_THRESHOLD = 0.40
+const ORDER_DCI_RESCUE_THRESHOLD = 0.30
+
 export function matchOrderToDelivery(orderLines, workspaceLines) {
   const byCode = new Map(
     workspaceLines.filter((l) => l.code).map((l) => [String(l.code), l]),
@@ -307,10 +334,11 @@ export function matchOrderToDelivery(orderLines, workspaceLines) {
     const byCodeMatch = orderLine.code ? byCode.get(String(orderLine.code)) : null
     if (byCodeMatch && !used.has(byCodeMatch.idx)) {
       used.add(byCodeMatch.idx)
-      return { orderLine, workspaceLine: byCodeMatch, matched: true }
+      return { orderLine, workspaceLine: byCodeMatch, matched: true, score: 100, matchStatus: 'auto' }
     }
 
     const orderNorm = normalizeLabel(orderLine.designation)
+    const orderDci = getDciToken(orderNorm)
     let best = null
     let bestScore = 0
     for (const { line, normalized } of normalizedLines) {
@@ -321,11 +349,17 @@ export function matchOrderToDelivery(orderLines, workspaceLines) {
         best = line
       }
     }
-    if (best && bestScore >= 0.5) {
-      used.add(best.idx)
-      return { orderLine, workspaceLine: best, matched: true }
-    }
-    return { orderLine, workspaceLine: null, matched: false }
+    if (!best) return { orderLine, workspaceLine: null, matched: false }
+
+    const bestDciMatches = dciMatch(orderDci, getDciToken(normalizeLabel(best.label || '')))
+    let matchStatus = null
+    if (bestScore >= ORDER_AUTO_THRESHOLD) matchStatus = 'auto'
+    else if (bestScore >= ORDER_WARNING_THRESHOLD || (bestDciMatches && bestScore >= ORDER_DCI_RESCUE_THRESHOLD)) matchStatus = 'warning'
+
+    if (!matchStatus) return { orderLine, workspaceLine: null, matched: false }
+
+    used.add(best.idx)
+    return { orderLine, workspaceLine: best, matched: true, score: Math.round(bestScore * 100), matchStatus }
   })
 }
 

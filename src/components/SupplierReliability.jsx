@@ -10,13 +10,18 @@ import { SecondaryButton } from './HomeScreen.jsx'
  * recalculé ici — ça reste correct même quand la table aura des dizaines
  * de milliers de lignes.
  */
-export function SupplierReliability({ onClose }) {
+export function SupplierReliability({ onClose, supabaseStatus }) {
   const [rows, setRows] = useState(null)
   const [error, setError] = useState(null)
   const configured = Boolean(supabase)
+  const unreachable = supabaseStatus === 'unreachable'
 
   useEffect(() => {
-    if (!configured) return
+    // Pas de requête si le projet est en pause (voir useSupabaseHealth.js) —
+    // et surtout, un .catch() qui manquait ici : un échec réseau (pas
+    // seulement une erreur Supabase) laissait `rows` bloqué à `null` pour
+    // toujours, coincé sur "Chargement…" sans jamais atteindre `setError`.
+    if (!configured || unreachable) return
     supabase
       .from('supplier_reliability')
       .select('*')
@@ -25,7 +30,8 @@ export function SupplierReliability({ onClose }) {
         if (err) setError(err.message)
         else setRows(data || [])
       })
-  }, [configured])
+      .catch((err) => setError(err.message))
+  }, [configured, unreachable])
 
   const kicker = {
     fontSize: 10,
@@ -71,23 +77,30 @@ export function SupplierReliability({ onClose }) {
           </div>
         )}
 
-        {configured && error && (
+        {configured && unreachable && (
+          <div style={{ padding: 14, border: '1px solid color-mix(in srgb, var(--color-warn) 40%, transparent)', background: 'var(--sticky-banner)', color: 'var(--color-warn)', fontSize: 13 }}>
+            Service indisponible — le projet Supabase semble en pause. Contactez le propriétaire du projet pour le
+            relancer, ou réessayez plus tard.
+          </div>
+        )}
+
+        {configured && !unreachable && error && (
           <div style={{ padding: 14, border: '1px solid color-mix(in srgb, var(--color-error) 40%, transparent)', background: 'var(--color-error-bg)', color: 'var(--color-error)', fontSize: 13 }}>
             {error}
           </div>
         )}
 
-        {configured && !error && rows === null && (
+        {configured && !unreachable && !error && rows === null && (
           <div style={{ fontSize: 13, color: 'var(--color-neutral-500)' }}>Chargement…</div>
         )}
 
-        {configured && !error && rows && rows.length === 0 && (
+        {configured && !unreachable && !error && rows && rows.length === 0 && (
           <div style={{ padding: 14, border: '1px solid var(--color-divider)', background: 'var(--color-surface)', fontSize: 13, color: 'var(--color-neutral-500)' }}>
             Aucune donnée pour l'instant — déposez un bon de commande avec un BL pour commencer à alimenter ce rapport.
           </div>
         )}
 
-        {configured && !error && rows && rows.length > 0 && (
+        {configured && !unreachable && !error && rows && rows.length > 0 && (
           <div style={{ border: '1px solid var(--color-divider)', background: 'var(--color-surface)' }}>
             <div
               style={{

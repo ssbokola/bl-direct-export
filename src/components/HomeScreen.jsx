@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fmtEur, fmtF } from '../blConstants'
 import { searchLatestPrices } from '../utils/priceHistory.js'
-import { supabase } from '../utils/supabaseClient.js'
 
 /**
  * Accueil — reprise du BL en cours, dépôt d'un nouveau BL, historique.
@@ -20,6 +19,7 @@ export function HomeScreen({
   onClearCompare,
   onOpenArchive,
   onOpenSuppliers,
+  supabaseStatus,
 }) {
   const kicker = {
     fontSize: 10,
@@ -50,7 +50,7 @@ export function HomeScreen({
           vente, export.
         </p>
 
-        <PriceLookup />
+        <PriceLookup supabaseStatus={supabaseStatus} />
 
         <div style={{ ...kicker, marginBottom: 10 }}>BL en cours</div>
 
@@ -305,17 +305,21 @@ export function HomeScreen({
  * pouvoir faire sans même ouvrir un BL (négociation, prix annoncé au
  * téléphone, contrôle avant de valider une nouvelle ligne).
  */
-function PriceLookup() {
+function PriceLookup({ supabaseStatus }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState(null)
   const [error, setError] = useState(null)
-  const configured = Boolean(supabase)
+  const unreachable = supabaseStatus === 'unreachable'
 
   const q = query.trim()
   const searchable = q.length >= 2
 
   useEffect(() => {
-    if (!configured || !searchable) return undefined
+    // Pas de requête vouée à l'échec quand le projet est en pause — voir
+    // useSupabaseHealth.js. 'checking' passe quand même : bloquer la
+    // recherche jusqu'à la fin du contrôle ajouterait un délai inutile
+    // dans le cas normal (projet joignable).
+    if (supabaseStatus === 'unconfigured' || unreachable || !searchable) return undefined
     let cancelled = false
     const timer = setTimeout(() => {
       searchLatestPrices(q)
@@ -333,9 +337,9 @@ function PriceLookup() {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [q, searchable, configured])
+  }, [q, searchable, supabaseStatus, unreachable])
 
-  if (!configured) return null
+  if (supabaseStatus === 'unconfigured') return null
 
   const kicker = {
     fontSize: 10,
@@ -363,17 +367,23 @@ function PriceLookup() {
         }}
       />
 
-      {searchable && error && (
+      {searchable && unreachable && (
+        <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--color-warn)' }}>
+          Service indisponible — le projet Supabase semble en pause.
+        </div>
+      )}
+
+      {searchable && !unreachable && error && (
         <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--color-error)' }}>{error}</div>
       )}
 
-      {searchable && !error && results && results.length === 0 && (
+      {searchable && !unreachable && !error && results && results.length === 0 && (
         <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--color-neutral-500)' }}>
           Aucun produit trouvé — il n'a peut-être jamais été saisi via cette appli.
         </div>
       )}
 
-      {searchable && !error && results && results.length > 0 && (
+      {searchable && !unreachable && !error && results && results.length > 0 && (
         <div
           style={{
             marginTop: 10,

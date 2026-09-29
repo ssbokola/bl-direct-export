@@ -1,6 +1,5 @@
 import { autoMatch, matchOrderToDelivery } from './utils/matching.js'
 import { syncMatchMemory } from './utils/settings.js'
-import { generateXlsxBlob, downloadXlsx } from './utils/csvGenerator.js'
 
 /**
  * Turns the BL products read by Step1Import (pdfParser.js/officineParser.js
@@ -63,31 +62,46 @@ export async function buildWorkspaceLines(blDocuments, medicielProducts, orderLi
  * si un BC couvrait cette ligne du tout (`hasOrderDoc` — une ligne du BL
  * absente du BC n'est pas "en rupture", elle est simplement hors sujet du
  * BC, ex. une substitution que le fournisseur a proposée).
+ *
+ * `ruptureMatchStatus`/`ruptureMatchScore` : la confiance du rapprochement
+ * BC↔BL lui-même (voir matchOrderToDelivery) — distincts de `score`/`status`
+ * plus haut, qui restent la confiance BL↔catalogue Médiciel. `undefined`
+ * quand `hasOrderDoc` est faux (rien à évaluer).
  */
 function applyRuptureFacts(lines, orderLines) {
   if (!orderLines?.length) {
     return lines.map((l) => ({ ...l, qtyCommandee: null, enRupture: false, hasOrderDoc: false }))
   }
   const matches = matchOrderToDelivery(orderLines, lines)
-  const qtyCommandeeByIdx = new Map(
-    matches.filter((m) => m.workspaceLine).map((m) => [m.workspaceLine.idx, m.orderLine.qtyCommandee]),
-  )
+  const matchByIdx = new Map(matches.filter((m) => m.workspaceLine).map((m) => [m.workspaceLine.idx, m]))
   return lines.map((l) => {
-    const qtyCommandee = qtyCommandeeByIdx.get(l.idx)
-    if (qtyCommandee === undefined) {
+    const match = matchByIdx.get(l.idx)
+    if (!match) {
       return { ...l, qtyCommandee: null, enRupture: false, hasOrderDoc: false }
     }
+    const qtyCommandee = match.orderLine.qtyCommandee
     const enRupture = qtyCommandee > l.qty
     const tauxRupturePct = enRupture ? Math.round(((qtyCommandee - l.qty) / qtyCommandee) * 1000) / 10 : 0
-    return { ...l, qtyCommandee, enRupture, hasOrderDoc: true, tauxRupturePct }
+    return {
+      ...l,
+      qtyCommandee,
+      enRupture,
+      hasOrderDoc: true,
+      tauxRupturePct,
+      ruptureMatchStatus: match.matchStatus,
+      ruptureMatchScore: match.score,
+    }
   })
 }
 
 /**
  * Le fichier d'import Médiciel : un vrai XLSX à 20 colonnes (voir
  * utils/csvGenerator.js), pas un CSV tronqué avec un taux de TVA inventé.
+ * xlsx chargé à la demande — même raison que downloadRuptureExcel dans
+ * ruptureExport.js, ne pas peser sur le chargement initial de l'appli.
  */
-export function downloadExport(rows, invoiceNumber, orderNumber, filename) {
+export async function downloadExport(rows, invoiceNumber, orderNumber, filename) {
+  const { generateXlsxBlob, downloadXlsx } = await import('./utils/csvGenerator.js')
   const products = rows.map((r) => ({
     codeMediciel: r.code,
     libelle: r.produit,

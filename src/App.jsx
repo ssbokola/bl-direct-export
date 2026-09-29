@@ -8,6 +8,8 @@ import { SupplierReliability } from './components/SupplierReliability.jsx'
 import { fmtF } from './blConstants.js'
 import { addHistoryEntry, loadHistory } from './utils/history.js'
 import { buildWorkspaceLines } from './workspaceAdapters.js'
+import { useSupabaseHealth } from './useSupabaseHealth.js'
+import { SupabaseStatusBanner } from './uxAdditions.jsx'
 
 function makeInitialImportData() {
   return {
@@ -42,6 +44,8 @@ export default function App() {
   const [history, setHistory] = useState(loadHistory)
   const [viewing, setViewing] = useState(null)
   const [compare, setCompare] = useState([])
+  const supabaseStatus = useSupabaseHealth()
+  const [bannerDismissed, setBannerDismissed] = useState(false)
 
   const updateImportData = useCallback((patch) => setImportData((d) => ({ ...d, ...patch })), [])
 
@@ -87,11 +91,18 @@ export default function App() {
     setScreen('landing')
   }, [])
 
+  // Un bandeau global (voir SupabaseStatusBanner) doit rester visible quel
+  // que soit l'écran affiché — d'où cette variable plutôt que les retours
+  // anticipés d'avant, qui empêchaient d'envelopper le résultat dans un
+  // fragment commun. Mêmes conditions, même ordre de priorité qu'avant,
+  // y compris la retombée sur l'écran suivant si `bl` n'est pas trouvé.
+  let content = null
+
   if (screen === 'archive' && viewing) {
     const bl = history.find((h) => h.id === viewing)
     if (bl) {
       const marge = bl.pv > 0 ? ((bl.pv - bl.pa) / bl.pv) * 100 : 0
-      return (
+      content = (
         <ArchiveScreen
           bl={bl}
           filename={`FACTURE-YOP-${bl.facture || 'SANS-REF'}.xlsx`}
@@ -113,12 +124,12 @@ export default function App() {
     }
   }
 
-  if (screen === 'suppliers') {
-    return <SupplierReliability onClose={() => setScreen('landing')} />
+  if (!content && screen === 'suppliers') {
+    content = <SupplierReliability onClose={() => setScreen('landing')} supabaseStatus={supabaseStatus} />
   }
 
-  if (screen === 'import') {
-    return (
+  if (!content && screen === 'import') {
+    content = (
       <ImportScreen
         onHome={() => setScreen('landing')}
         data={importData}
@@ -128,8 +139,8 @@ export default function App() {
     )
   }
 
-  if (screen === 'bl' && workData) {
-    return (
+  if (!content && screen === 'bl' && workData) {
+    content = (
       <BlSession
         key={sessionId}
         lines={workData.lines}
@@ -149,17 +160,30 @@ export default function App() {
     )
   }
 
+  if (!content) {
+    content = (
+      <HomeScreen
+        current={null}
+        onResume={goToImport}
+        onStart={goToImport}
+        history={history}
+        compare={compare}
+        onToggleCompare={toggleCompare}
+        onClearCompare={() => setCompare([])}
+        onOpenArchive={(id) => { setViewing(id); setScreen('archive') }}
+        onOpenSuppliers={() => setScreen('suppliers')}
+        supabaseStatus={supabaseStatus}
+      />
+    )
+  }
+
   return (
-    <HomeScreen
-      current={null}
-      onResume={goToImport}
-      onStart={goToImport}
-      history={history}
-      compare={compare}
-      onToggleCompare={toggleCompare}
-      onClearCompare={() => setCompare([])}
-      onOpenArchive={(id) => { setViewing(id); setScreen('archive') }}
-      onOpenSuppliers={() => setScreen('suppliers')}
-    />
+    <>
+      <SupabaseStatusBanner
+        shown={supabaseStatus === 'unreachable' && !bannerDismissed}
+        onDismiss={() => setBannerDismissed(true)}
+      />
+      {content}
+    </>
   )
 }

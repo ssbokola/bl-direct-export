@@ -126,10 +126,14 @@ export function generateRuptureXlsxBlob(rows, meta) {
     ['Ruptures', String(rows.length)],
     [],
   ]
-  const header = ['Désignation', 'Qté manquante']
-  const wsData = [...info, header, ...rows.map((r) => [r.designation, r.manquant])]
+  const header = ['Désignation', 'Qté manquante', 'Confiance']
+  const wsData = [
+    ...info,
+    header,
+    ...rows.map((r) => [r.designation, r.manquant, r.matchStatus === 'warning' ? 'À vérifier' : '']),
+  ]
   const ws = XLSX.utils.aoa_to_sheet(wsData)
-  ws['!cols'] = [{ wch: 50 }, { wch: 14 }]
+  ws['!cols'] = [{ wch: 50 }, { wch: 14 }, { wch: 14 }]
 
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'Ruptures')

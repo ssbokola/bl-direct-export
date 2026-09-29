@@ -81,6 +81,71 @@ export function AutoAcceptBanner({ count, onAccept }) {
 }
 
 /* ------------------------------------------------------------------ *
+ * L'indisponibilité de Supabase — rendue visible globalement (App.jsx),
+ * plutôt que silencieuse ou seulement là où quelqu'un cherche activement
+ * un prix. Palette warn/ambre, pas erreur/rouge : un projet en pause est un
+ * état connu et récupérable (voir useSupabaseHealth.js), pas une panne de
+ * l'appli. Pas de bouton d'action : seul le propriétaire du projet Supabase
+ * peut le relancer depuis le dashboard, le personnel ne peut rien faire de
+ * plus qu'être informé.
+ * ------------------------------------------------------------------ */
+
+export function SupabaseStatusBanner({ shown, onDismiss }) {
+  if (!shown) return null
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 12,
+        margin: '12px 24px 0',
+        padding: '11px 14px',
+        borderRadius: 'var(--radius-md)',
+        background: 'var(--sticky-banner)',
+        boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--color-warn) 40%, transparent)',
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: 'var(--font-heading)', fontSize: 13, color: 'var(--color-warn)' }}>
+          Service partagé indisponible
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--color-neutral-300)', marginTop: 3, lineHeight: 1.5 }}>
+          Supabase ne répond pas — le projet est peut-être en pause après une période d'inactivité.
+          L'import et l'export restent utilisables ; le dernier prix connu, la fiabilité fournisseurs
+          et la mémoire d'appariement sont indisponibles pour l'instant.{' '}
+          <a
+            href="https://supabase.com/dashboard/project/xaajjtislmvhjipbvmgh"
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: 'var(--color-neutral-400)', textDecoration: 'underline' }}
+          >
+            Ouvrir le dashboard Supabase
+          </a>
+        </div>
+      </div>
+      <button
+        onClick={onDismiss}
+        title="Masquer"
+        style={{
+          flex: 'none',
+          width: 24,
+          height: 24,
+          border: 0,
+          borderRadius: 'var(--radius-sm)',
+          background: 'transparent',
+          color: 'var(--color-neutral-400)',
+          fontFamily: 'inherit',
+          fontSize: 14,
+          cursor: 'pointer',
+        }}
+      >
+        ×
+      </button>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ *
  * La reprise après interruption — useAwayDetection vit dans son propre
  * fichier (useAwayDetection.js), scrollToRow dans le sien (scrollToRow.js) :
  * ce ne sont pas des composants, les mélanger ici casserait le Fast Refresh
