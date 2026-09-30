@@ -50,9 +50,9 @@ export async function parseMedicielExcel(file) {
   // Debug: show all detected headers
   console.log(`🔍 Excel headers (ligne ${headerRowIdx + 1}):`, headerMap)
 
-  // Find column indices — candidates cover both known export formats.
-  const colCode = findCol(headerMap, ['code produit', 'identifiant produit', 'code'])
-  const colProduit = findCol(headerMap, ['produit', 'libellé', 'libelle', 'désignation', 'designation'])
+  // Find column indices — candidates cover the known export formats.
+  const colCode = findCol(headerMap, CODE_CANDIDATES)
+  const colProduit = findCol(headerMap, PRODUIT_CANDIDATES)
   const colStockTotal = findCol(headerMap, ['stock total', 'total stock', 's. total'])
   const colPrixAchat = findCol(headerMap, ['prix achat ht', 'p. achat ht', 'prix achat', 'pa ht', 'prix d\'achat', 'p.a. ht', 'pa'])
   const colPrixVente = findCol(headerMap, ['prix vente ttc', 'p. vente ttc', 'prix vente', 'pv ttc', 'prix de vente', 'p.v. ttc', 'pv', 'pvp', 'prix public', 'ppv', 'p.vente', 'pvente', 'tarif'])
@@ -110,23 +110,33 @@ export async function parseMedicielExcel(file) {
   return products
 }
 
+const CODE_CANDIDATES = ['code produit', 'identifiant produit', 'code']
+const PRODUIT_CANDIDATES = ['produit', 'libellé', 'libelle', 'désignation', 'designation']
+
 /**
  * The pharmacy-identity block above the header varies by one row between
  * Médiciel export types (the valuation report has an extra "EMPLACEMENT : 0"
  * line the nomenclature listing doesn't), so the header can't be assumed at
- * a fixed row. Scan the first rows for the one that has BOTH a "Produit"
- * cell and a code-column cell ("Code produit" or "Identifiant produit") —
- * specific enough that a data row won't accidentally match it.
+ * a fixed row. Scan the first rows for the one that has BOTH a produit-like
+ * cell and a code-like cell.
+ *
+ * Match by SUBSTRING (candidate ≥3 chars, same rule as findCol below), not
+ * exact equality — a third real export format ("Historique stock") uses
+ * compound headers ("CODE 1", "DESIGNATION PRODUIT") that never equal a bare
+ * "produit"/"code" cell, and were falling through to the row-8 fallback
+ * (wrong row for this format, producing zero products). A data row
+ * accidentally containing both "code" and "produit" substrings on the same
+ * row, within the first 15 rows, is not a realistic false positive for a
+ * French pharmaceutical product designation.
  */
 function findHeaderRowIndex(rawData) {
-  const CODE_HEADERS = ['code produit', 'identifiant produit', 'code']
   const limit = Math.min(rawData.length, 15)
   for (let i = 0; i < limit; i++) {
     const row = rawData[i]
     if (!row) continue
     const cells = row.map((c) => String(c).trim().toLowerCase())
-    const hasProduit = cells.some((c) => c === 'produit')
-    const hasCode = cells.some((c) => CODE_HEADERS.includes(c))
+    const hasProduit = cells.some((c) => PRODUIT_CANDIDATES.some((p) => c.includes(p)))
+    const hasCode = cells.some((c) => CODE_CANDIDATES.some((cd) => c.includes(cd)))
     if (hasProduit && hasCode) return i
   }
   return 7 // repli historique : ligne 8 (ancien format, si jamais rien n'est détecté)
