@@ -135,6 +135,14 @@ function groupByY(items, tolerance) {
  * sans le bloc d'en-tête "N° : ... - Date : ...".
  * ------------------------------------------------------------------ */
 
+// En-têtes des deux colonnes utiles, déjà en minuscules (voir parseOrderExcel).
+// "Produit" ET "Produits" : la copie envoyée au fournisseur (« COMMANDE FRANCE
+// jj-mm-aa.xlsx », en-têtes "Produits" / "Qté Comdée", sans bloc N°/Date) met
+// le pluriel — l'égalité stricte sur "produit" rejetait ce fichier réel.
+// Quantité : "Qté comdée", "Qté commandée", "Quantité commandée".
+const EXCEL_PRODUIT_HEADER = /^produits?$/i
+const EXCEL_QTY_HEADER = /qt[ée]\s*com|quantit[ée]\s*command/i
+
 async function parseOrderExcel(file) {
   const arrayBuffer = await file.arrayBuffer()
   const workbook = XLSX.read(arrayBuffer, { type: 'array' })
@@ -155,8 +163,8 @@ async function parseOrderExcel(file) {
     if (dateMatch) orderDate = dateMatch[1]
 
     const cells = row.map((c) => String(c).trim().toLowerCase())
-    const hasProduit = cells.some((c) => c === 'produit')
-    const hasQty = cells.some((c) => /qt[ée]\s*com|quantit[ée]\s*command/i.test(c))
+    const hasProduit = cells.some((c) => EXCEL_PRODUIT_HEADER.test(c))
+    const hasQty = cells.some((c) => EXCEL_QTY_HEADER.test(c))
     if (hasProduit && hasQty) {
       headerRowIdx = i
       break
@@ -168,8 +176,8 @@ async function parseOrderExcel(file) {
   }
 
   const headerRow = rows[headerRowIdx].map((c) => String(c).trim().toLowerCase())
-  const colProduit = headerRow.findIndex((c) => c === 'produit')
-  const colQty = headerRow.findIndex((c) => /qt[ée]\s*com|quantit[ée]\s*command/i.test(c))
+  const colProduit = headerRow.findIndex((c) => EXCEL_PRODUIT_HEADER.test(c))
+  const colQty = headerRow.findIndex((c) => EXCEL_QTY_HEADER.test(c))
 
   const lines = []
   for (let i = headerRowIdx + 1; i < rows.length; i++) {
