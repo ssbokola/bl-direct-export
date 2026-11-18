@@ -47,7 +47,14 @@ export default function App() {
   const supabaseStatus = useSupabaseHealth()
   const [bannerDismissed, setBannerDismissed] = useState(false)
 
-  const updateImportData = useCallback((patch) => setImportData((d) => ({ ...d, ...patch })), [])
+  // `patch` : un objet à fusionner, ou une fonction (données courantes) => objet.
+  // La forme fonction évite qu'une lecture OCR longue (30 s et plus) qui se
+  // termine écrase, avec une copie périmée de `blDocuments`, ce qui a changé
+  // entre-temps (BL ajouté, n° de facture corrigé à la main…).
+  const updateImportData = useCallback(
+    (patch) => setImportData((d) => ({ ...d, ...(typeof patch === 'function' ? patch(d) : patch) })),
+    [],
+  )
 
   const goToImport = useCallback(() => {
     setImportData(makeInitialImportData())

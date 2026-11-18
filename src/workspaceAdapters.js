@@ -38,6 +38,9 @@ export async function buildWorkspaceLines(blDocuments, medicielProducts, orderLi
       idx: idx++,
       blDocId: doc.id,
       cip: blProduct.cip,
+      // CIP dont la clé de contrôle est invalide (mal lu par OCR) : ne doit pas
+      // être mémorisé comme clé d'appariement (voir useBlWorkspace).
+      cipUnverified: Boolean(blProduct.cipUnverified),
       label: blProduct.designation,
       qtyOrdered: blProduct.qtyOrdered,
       qty: blProduct.qtyDelivered,

@@ -103,17 +103,19 @@ Trois cartes de dépôt :
 
 | Fichier | Rôle | Parseur |
 | --- | --- | --- |
-| **BL fournisseur — PDF** | Le bon de livraison lui-même | `pdfParser.js` (Direct Export, natif) ou `officineParser.js` (Officine France, natif ou scanné → OCR) |
+| **BL fournisseur — PDF** (ou **photos**, source Officine France) | Le bon de livraison lui-même | `pdfParser.js` (Direct Export, natif) ou `officineParser.js` (Officine France : PDF natif, PDF scanné → OCR, ou une/plusieurs **photos** → OCR, `parseOfficineImages`) |
 | **Base Médiciel — XLSX** | Export du stock officine, pour le matching | `excelParser.js`, deux formats supportés (en-têtes détectés automatiquement) |
 | **Bon de commande — optionnel** | Le document envoyé au fournisseur *avant* ce BL | `orderParser.js` (§5) — sans lui, aucune ligne n'a `hasOrderDoc`, comportement inchangé |
 
 OCR (source Officine France scannée) : `ocrEngine.js` traite les pages **en parallèle** (pool de jusqu'à 3 workers, borné par le nombre de pages et les cœurs CPU disponibles) — un scan de 4 pages qui prenait plusieurs minutes en séquentiel tourne maintenant en ~1-2 min. La détection du nom de fournisseur et du n° de BL utilise une regex partagée (`PHARMACY_NAME_RE`/`PHARMACY_NAME_ALL_RE`, `ocrEngine.js`) qui s'arrête à un mot-clé connu (BON/FACTURE/LIVRAISON/PAGE/…) plutôt que d'avaler toute la ligne — corrigé le 09/09/2026 après qu'un scan multi-pages avec un en-tête répété par page produisait un fournisseur illisible (§12).
 
+**BL photographié (18/11/2026)** — source Officine France uniquement : la carte BL accepte un PDF **ou** 1 à 8 photos JPEG/PNG/WebP, une par page, sélectionnées d'un coup (pas de mélange PDF + photos ; HEIC refusé avec un message explicite). Même OCR que le PDF scanné (`ocrCanvasPages`, pool de workers) précédé d'une préparation de l'image (`ocrEngine.js` : `prepareImageCanvas` → agrandissement à ~4 800 px de côté long, plafonné à 16 Mpx, + niveaux de gris, étirement du contraste, masque flou — mesuré sur 2 vraies photos 899×1599 : lues brutes 36 lignes/55, préparées 55/55 ; la netteté compte : sans elle 54/55). Les pages sont remises dans l'ordre de leur « Page : N » imprimé (`orderPagesByNumber`) ; deux photos de la même page sont refusées (elles doubleraient les lignes). Contrairement à un scan, une photo n'a pas de coches de stylo mais a plus de chiffres mal lus : `parseOcrProductLine` recoupe donc chaque ligne (quantité × prix unitaire = total au centime ; le prix brut sert de 2ᵉ avis **uniquement si %Rem = 0**, une quantité déduite > 99 est gardée mais signalée, un prix de 4 décimales sans virgule se lit ÷ 10 000) — tout ce qui ne tombe pas juste est `A VERIFIER`. Le CIP est contrôlé par sa clé EAN-13 (`verifyCip` : un « 2400… » lu pour « 3400… » est réparé si la clé le confirme, sinon `cipUnverified`, affiché « ? » et **jamais mémorisé** dans `match_memory`). Le « Total Net HT » imprimé est lu (`extractPrintedTotalHt`) et pré-remplit le contrôle du total du BL ; le n° de facture lu est modifiable. Voir §12 et §13.
+
 **Fournisseur** : pour une source Direct Export, le champ est **éditable** — pré-rempli une fois par une devinette best-effort (`guessSupplierName`, `pdfParser.js`) si trouvée, jamais bloquant si vide. Pour Officine France, le nom est détecté par OCR (même regex partagée que ci-dessus).
 
 **Lignes lues sur le BL** — tableau # / Désignation / CIP / Cmd / **Qté livrée** / **PU €** / Total € / Signalement, avec Qté livrée et PU € éditables (corrige une lecture OCR erronée avant que matching et prix ne s'appuient dessus).
 
-**Contrôle · total du BL** — compare la somme des lignes lues au total de facture ressaisi à la main.
+**Contrôle · total du BL** — compare la somme des lignes lues au total de facture. Pour un BL lu par OCR, le champ est pré-rempli avec le « Total Net HT » imprimé quand il a été lu (libellé « lu sur le BL », modifiable) ; sinon il reste à saisir à la main. Écart « sévère » au-delà de 0,05 € (`TOTAL_TOLERANCE_EUR`, `Step1Import.jsx` — en dessous : arrondis par ligne et ligne « PRR » de 0,01 € que l'OCR ne reprend pas).
 
 ### 4.2 Plan de travail (`BlSession.jsx` + `Workspace.jsx` + `WorkTable.jsx`, étapes 2-4)
 
@@ -310,6 +312,19 @@ OCR traité page par page en parallèle (pool de workers) plutôt que strictemen
 
 Recherche "dernier prix connu" partagée sur l'accueil (§7). Découverte que le projet Supabase se met en pause entre deux usages réels de l'app, et ping automatique GitHub Actions pour l'empêcher (§10). Audit de sécurité multi-agents : trois failles trouvées, la plus grave (revue humaine contournable sur la mémoire "déjà vu") corrigée, les deux autres mitigées partiellement (§9).
 
+### 28-30/09/2026 — Rattrapage : multi-BL, bandeau Supabase, confiance des ruptures, chargement allégé (`ef7afdc`, `5493f63`, `769b61e`)
+
+- **Plusieurs BL pour une même livraison** (`ef7afdc`) : `blDocuments` (un document par BL, `blDocument.js`), un seul compteur `idx` sur toutes les lignes, `blDocId` par ligne ; `applyRuptureFacts` tourne **une seule fois** sur les lignes combinées ; `buildBlFacts` résout `bl_reference` par ligne (jamais une chaîne jointe : `supplier_reliability` fait `count(distinct bl_reference)`) ; un fichier XLSX d'export par BL. Même commit : bouton « Accepter les appariements » aussi en bas de l'écran Matching, tri alphabétique du Matching → Validation (les `lines` ne sont jamais triées ni renumérotées, seul le dérivé `visible` l'est ; la colonne `#` garde la numérotation papier).
+- **Visibilité Supabase** (`5493f63`) : `supabaseHealth.js` + `useSupabaseHealth.js` (requête `head` sur `bl_lines`, délai 7 s) → bandeau « Service partagé indisponible » (`uxAdditions.jsx`), états dédiés dans « Dernier prix connu » et « Fiabilité fournisseurs » ; le cœur de la conversion fonctionne sans Supabase. **Confiance des ruptures** : `matchOrderToDelivery` renvoie `matchStatus` (auto ≥ 0,65 ; à vérifier ≥ 0,40 ou DCI ≥ 0,30) → pastille « À vérifier » + colonne « Confiance » dans les exports de ruptures. **Chargement allégé** : pdfjs, tesseract, xlsx, jszip, jspdf importés à la demande (`await import()`).
+- **3ᵉ format d'export Médiciel** (`769b61e`) : en-têtes composés (« CODE 1 », « DESIGNATION PRODUIT »), détection de la ligne d'en-têtes par sous-chaîne (`excelParser.js`).
+
+### 18/11/2026 — Bon de commande « Produits » + BL photographiés (`8260f67` puis ce lot)
+
+- `orderParser.js` accepte l'en-tête « Produits » (pluriel) : la copie Excel réellement envoyée au fournisseur (« COMMANDE FRANCE jj-mm-aa.xlsx », sans bloc N°/Date) était rejetée (« Colonnes du bon de commande non reconnues »).
+- **Lecture des BL à partir de photos** (§4.1). Revue adversariale (4 relecteurs + vérificateurs) : corrigés avant livraison — brut utilisé comme 2ᵉ avis sur des lignes remisées (désormais seulement si %Rem = 0), quantités × 100 silencieuses (> 99 maintenant signalées), désignations tronquées (le jeton Qté reste en fin de texte pour protéger le dernier mot, comme avant), entiers de 7 chiffres pris à tort pour des prix, un scan long qui écrasait un BL ajouté entre-temps (`updateImportData` accepte une fonction), état périmé d'une carte au changement de source (clé `source-id`). Non-régression vérifiée sur un vrai BL scanné de 45 lignes : tableau identique octet pour octet avant/après.
+- Nom du fournisseur : la regex partagée sautait les retours à la ligne et happait l'initiale de la ligne suivante (« PHARMACIE DE CHAMPEAUX\nM ») — coupé au premier retour à la ligne dans `extractOcrHeaderInfo`.
+- Le dossier `.git` local (synchronisé par Dropbox) avait été retrouvé en retard sur GitHub ; toujours `git fetch` + comparer avant de commiter ici.
+
 ---
 
 ## 13. Limitations connues
@@ -320,7 +335,9 @@ Recherche "dernier prix connu" partagée sur l'accueil (§7). Découverte que le
 - **Supabase free tier** — se met en pause après ~7 jours d'inactivité ; mitigé par le ping automatique (§10) mais pas éliminé (si le ping échoue ou est désactivé, la pause revient).
 - **Historique "BL traités" non partagé** — local à chaque poste (`localStorage`), volontairement (§4.4). Ne pas confondre avec `bl_lines`, qui lui est partagé.
 - **`orderParser.js` limité à deux formats réels de bon de commande** — un troisième format nécessiterait son propre adaptateur (§5).
-- **Score de confiance OCR par ligne inexistant** — le "Signalement" à l'import se limite à ce qui est calculable sans ça (livraison partielle, drapeau `A VERIFIER` du parseur).
+- **Score de confiance OCR par ligne inexistant** — le "Signalement" à l'import se limite à ce qui est calculable sans ça (livraison partielle, drapeau `A VERIFIER` du parseur : une ligne dont quantité × prix ≠ total au centime près).
+- **Photos de BL : pas de garantie à 100 %** — mesuré sur 2 photos réduites (899×1599) : 55 lignes sur 55 mais, selon le réglage d'agrandissement, 0 à ~5 lignes avec un chiffre faux (toutes signalées) et 6 à 12 CIP sur 55 de clé invalide (jamais mémorisés). Le n° de facture lu est le champ le plus fragile (corrigeable à l'import). Une photo de téléphone en pleine taille doit faire mieux, non mesuré. Pas de HEIC, pas de correction de perspective (seule l'inclinaison est compensée), pas de vote entre plusieurs agrandissements (piste si les photos réelles s'avèrent trop bruitées).
+- **Une quantité > 99 lue sans jeton Qté confirmant** est gardée mais toujours signalée `A VERIFIER` (choix volontaire : une quantité 100 fois trop grande par total à virgule perdue est plus grave qu'un faux signalement).
 - **Thème sombre uniquement**, pas de variante claire.
 - **Pas de tests automatisés.**
 - **Pas de PR/branches** — tout le développement se fait par push direct sur `main`, déployé automatiquement.

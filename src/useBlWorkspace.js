@@ -145,7 +145,7 @@ export function useBlWorkspace(initialLines) {
       ),
     )
     const line = lines[idx]
-    if (line) rememberMatch(line.cip, { code: product.code, produit: product.label })
+    if (line && !line.cipUnverified) rememberMatch(line.cip, { code: product.code, produit: product.label })
     setExpanded(null)
   }, [lines])
 
@@ -161,7 +161,7 @@ export function useBlWorkspace(initialLines) {
   /** Accepter la proposition telle quelle, sans passer par la recherche. */
   const confirm = useCallback((idx) => {
     const line = lines[idx]
-    if (line?.med) rememberMatch(line.cip, { code: line.code, produit: line.med })
+    if (line?.med && !line.cipUnverified) rememberMatch(line.cip, { code: line.code, produit: line.med })
     setLines((ls) => ls.map((l, i) => (i === idx ? { ...l, status: 'manual', score: 100 } : l)))
     setExpanded(null)
   }, [lines])

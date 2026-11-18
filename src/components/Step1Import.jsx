@@ -4,10 +4,21 @@ import { makeEmptyDocument } from '../blDocument.js'
 
 const SOURCES = [
   { key: 'direct-export', label: 'Direct Export', hint: 'PDF natif du fournisseur' },
-  { key: 'officine-france', label: 'Officine France', hint: 'BL/facture, scan accepté' },
+  { key: 'officine-france', label: 'Officine France', hint: 'BL/facture, scan ou photo accepté' },
 ]
 
+const IMAGE_EXT = /\.(jpe?g|png|webp)$/i
+const MAX_PHOTOS = 8
+
 const fmtEur2 = (n) => (n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+// Valeur numérique → contenu du champ « Total facture » (virgule française).
+const toTotalField = (value) => (value ? String(value).replace('.', ',') : '')
+
+// Au-delà, l'écart entre les lignes lues et le total imprimé est une vraie
+// erreur de lecture. En dessous, c'est de l'arrondi (lignes arrondies au
+// centime une à une) ou la ligne « PRR » de 0,01 € que l'OCR ne reprend pas.
+const TOTAL_TOLERANCE_EUR = 0.05
 
 function formatSize(bytes) {
   if (!bytes) return ''
@@ -28,7 +39,10 @@ function signalement(p) {
   return null
 }
 
-function FileCard({ title, kind, kindTone, loading, loadingLabel, file, count, countLabel, error, accept, onFile, onRemove, children }) {
+// `onFiles` (+ `multiple`) : la carte accepte plusieurs fichiers d'un coup (les
+// photos d'un même BL, une par page) ; sans lui, un seul fichier via `onFile`.
+// `hint` remplace l'affichage brut de `accept` dans la zone de dépôt.
+function FileCard({ title, kind, kindTone, loading, loadingLabel, file, count, countLabel, error, accept, hint, multiple, onFile, onFiles, onRemove, children }) {
   const [dragOver, setDragOver] = useState(false)
   const inputRef = useRef()
   const loaded = Boolean(file) && !error && !loading
@@ -95,8 +109,10 @@ function FileCard({ title, kind, kindTone, loading, loadingLabel, file, count, c
         onDrop={(e) => {
           e.preventDefault()
           setDragOver(false)
-          const f = e.dataTransfer?.files?.[0]
-          if (f) onFile(f)
+          const dropped = [...(e.dataTransfer?.files || [])]
+          if (!dropped.length) return
+          if (onFiles) onFiles(dropped)
+          else onFile(dropped[0])
         }}
         onClick={() => !loading && inputRef.current?.click()}
         style={{
@@ -113,8 +129,15 @@ function FileCard({ title, kind, kindTone, loading, loadingLabel, file, count, c
           ref={inputRef}
           type="file"
           accept={accept}
+          multiple={Boolean(onFiles && multiple)}
           style={{ display: 'none' }}
-          onChange={(e) => e.target.files[0] && onFile(e.target.files[0])}
+          onChange={(e) => {
+            const picked = [...e.target.files]
+            e.target.value = '' // permet de re-choisir le même fichier après une correction
+            if (!picked.length) return
+            if (onFiles) onFiles(picked)
+            else onFile(picked[0])
+          }}
           disabled={loading}
         />
         <div
@@ -149,7 +172,7 @@ function FileCard({ title, kind, kindTone, loading, loadingLabel, file, count, c
           ) : (
             <>
               <div style={{ fontSize: 13, color: 'var(--color-neutral-300)' }}>Glissez le fichier ou cliquez</div>
-              <div style={{ fontSize: 11, color: 'var(--color-neutral-500)', marginTop: 2 }}>{accept}</div>
+              <div style={{ fontSize: 11, color: 'var(--color-neutral-500)', marginTop: 2 }}>{hint || accept}</div>
             </>
           )}
         </div>
@@ -371,14 +394,39 @@ function BlDocumentCard({ doc, index, total, source, medicielProducts, onUpdate,
   const [ocrProgress, setOcrProgress] = useState(null)
   const [error, setError] = useState(null)
   const [showManualForm, setShowManualForm] = useState(false)
-  const [invoiceTotal, setInvoiceTotal] = useState('')
+  // Le total imprimé sur le BL, quand l'OCR a su le lire, pré-remplit le
+  // contrôle du total (modifiable) — doc.printedTotalHt survit à un retour sur
+  // cette étape, contrairement à un état local.
+  const [invoiceTotal, setInvoiceTotal] = useState(() => toTotalField(doc.printedTotalHt))
+  const [totalIsRead, setTotalIsRead] = useState(Boolean(doc.printedTotalHt))
 
-  const handlePdf = useCallback(async (file) => {
-    if (!file) return
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setError('Veuillez sélectionner un fichier PDF.')
+  // Un seul PDF, ou une ou plusieurs photos (une par page) — jamais un mélange.
+  const handleBlFiles = useCallback(async (files) => {
+    if (!files?.length) return
+    const allPdf = files.every((f) => /\.pdf$/i.test(f.name))
+    const allImages = files.every((f) => IMAGE_EXT.test(f.name))
+    const photoAllowed = source === 'officine-france'
+
+    let refusal = null
+    if (!allPdf && !allImages) {
+      refusal = files.some((f) => /\.(heic|heif)$/i.test(f.name))
+        ? "Photo HEIC non prise en charge : convertissez-la d'abord en JPEG (ou envoyez-la par WhatsApp/mail, qui la convertit)."
+        : photoAllowed
+          ? 'Format non pris en charge : un PDF, ou des photos JPEG / PNG, sont attendus.'
+          : 'Veuillez sélectionner un fichier PDF.'
+    } else if (allPdf && files.length > 1) {
+      refusal = 'Un seul PDF à la fois.'
+    } else if (allImages && !photoAllowed) {
+      refusal = "Les photos se lisent avec la source Officine France (reconnaissance optique) — Direct Export attend le PDF d'origine."
+    } else if (allImages && files.length > MAX_PHOTOS) {
+      refusal = `${MAX_PHOTOS} photos au plus par BL.`
+    }
+    if (refusal) {
+      setError(refusal)
       return
     }
+
+    const asPhotos = allImages
     setError(null)
     setLoading(true)
     setOcrProgress(null)
@@ -388,18 +436,31 @@ function BlDocumentCard({ doc, index, total, source, medicielProducts, onUpdate,
       // Chargés à la demande — pdfjs-dist (les deux) et surtout tesseract.js
       // (Officine France seule) n'ont pas à peser sur le chargement initial
       // d'une session qui n'en aura peut-être jamais besoin.
-      const parseFn = source === 'officine-france'
-        ? (await import('../utils/officineParser.js')).parseOfficinePdf
-        : (await import('../utils/pdfParser.js')).parseBLPdf
-      const result = await parseFn(file, onProgress)
+      const result = asPhotos
+        ? await (await import('../utils/officineParser.js')).parseOfficineImages(files, onProgress)
+        : await (source === 'officine-france'
+            ? (await import('../utils/officineParser.js')).parseOfficinePdf
+            : (await import('../utils/pdfParser.js')).parseBLPdf)(files[0], onProgress)
       if (!result.products.length) {
-        setError('Aucun produit trouvé dans le PDF. Vérifiez le format.')
+        setError(asPhotos
+          ? 'Aucun produit lu sur les photos. Cadrez la page entière, bien à plat et bien éclairée, ou utilisez le PDF.'
+          : 'Aucun produit trouvé dans le PDF. Vérifiez le format.')
         setLoading(false)
         setOcrProgress(null)
         return
       }
+      const printedTotal = result.printedTotalHt ?? null
+      setInvoiceTotal(toTotalField(printedTotal))
+      setTotalIsRead(Boolean(printedTotal))
       onUpdate({
-        pdfFile: file,
+        // Pour des photos, `pdfFile` n'est qu'un descripteur d'affichage (nom, taille).
+        pdfFile: asPhotos
+          ? {
+              name: files.length > 1 ? `${files.length} photos — ${files.map((f) => f.name).join(', ')}` : files[0].name,
+              size: files.reduce((sum, f) => sum + f.size, 0),
+            }
+          : files[0],
+        printedTotalHt: printedTotal,
         blProducts: result.products,
         invoiceNumber: result.invoiceNumber,
         orderNumber: result.orderNumber,
@@ -414,7 +475,7 @@ function BlDocumentCard({ doc, index, total, source, medicielProducts, onUpdate,
           : {}),
       })
     } catch (err) {
-      setError(`Erreur de lecture PDF : ${err.message}`)
+      setError(`${asPhotos ? 'Erreur de lecture des photos' : 'Erreur de lecture PDF'} : ${err.message}`)
     }
     setLoading(false)
     setOcrProgress(null)
@@ -451,25 +512,29 @@ function BlDocumentCard({ doc, index, total, source, medicielProducts, onUpdate,
   const invoiceTotalNum = parseFloat(invoiceTotal.replace(',', '.'))
   const hasInvoiceTotal = Number.isFinite(invoiceTotalNum) && invoiceTotalNum > 0
   const ecart = hasInvoiceTotal ? linesTotal - invoiceTotalNum : 0
-  const ecartSevere = hasInvoiceTotal && Math.abs(ecart) > 0.01
+  const ecartSevere = hasInvoiceTotal && Math.abs(ecart) > TOTAL_TOLERANCE_EUR
 
   const signalCount = (doc.blProducts || []).filter((p) => signalement(p)).length
-  const pdfTitle = total > 1 ? `BL fournisseur — PDF (BL ${index + 1})` : 'BL fournisseur — PDF'
+  const isOfficine = source === 'officine-france'
+  const docKind = isOfficine ? 'PDF ou photos' : 'PDF'
+  const pdfTitle = total > 1 ? `BL fournisseur — ${docKind} (BL ${index + 1})` : `BL fournisseur — ${docKind}`
 
   return (
     <div>
       <FileCard
         title={pdfTitle}
-        kind="PDF"
+        kind={isOfficine ? 'BL' : 'PDF'}
         kindTone="var(--color-error)"
-        accept=".pdf"
+        accept={isOfficine ? '.pdf,.jpg,.jpeg,.png,.webp' : '.pdf'}
+        hint={isOfficine ? 'PDF scanné, ou photos .jpg/.png — une par page, plusieurs d’un coup' : undefined}
+        multiple={isOfficine}
         loading={loading}
-        loadingLabel={ocrProgress?.message || 'Lecture du PDF…'}
+        loadingLabel={ocrProgress?.message || 'Lecture du BL…'}
         file={doc.pdfFile}
         count={doc.blProducts?.length || 0}
         countLabel="lignes détectées"
         error={error}
-        onFile={handlePdf}
+        onFiles={handleBlFiles}
         onRemove={canRemove ? onRemove : undefined}
       >
         {ocrProgress && loading && (
@@ -512,10 +577,36 @@ function BlDocumentCard({ doc, index, total, source, medicielProducts, onUpdate,
             </div>
             {detected.map(([label, value]) => (
               <div key={label} style={{ background: 'var(--color-neutral-900)', padding: '8px 10px' }}>
-                <div style={{ fontSize: 10, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--color-neutral-500)' }}>{label}</div>
-                <div className="num ell" style={{ fontSize: 13, marginTop: 2 }}>
-                  {value}
+                <div style={{ fontSize: 10, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--color-neutral-500)' }}>
+                  {label === 'N° facture' && isOfficine ? 'N° facture · modifiable' : label}
                 </div>
+                {label === 'N° facture' && isOfficine ? (
+                  // Lu par reconnaissance optique : un chiffre de ce n° se trompe
+                  // facilement sur une photo, et il nomme les fichiers d'export
+                  // et l'historique — corrigeable ici plutôt que figé.
+                  <input
+                    type="text"
+                    value={doc.invoiceNumber || ''}
+                    onChange={(e) => onUpdate({ invoiceNumber: e.target.value.replace(/\s/g, '') })}
+                    title="Lu par reconnaissance optique — à comparer avec le BL"
+                    className="num"
+                    style={{
+                      width: '100%',
+                      marginTop: 2,
+                      padding: 0,
+                      border: 0,
+                      borderBottom: '1px dashed var(--color-neutral-600)',
+                      background: 'transparent',
+                      color: 'var(--color-text)',
+                      fontFamily: 'inherit',
+                      fontSize: 13,
+                    }}
+                  />
+                ) : (
+                  <div className="num ell" style={{ fontSize: 13, marginTop: 2 }}>
+                    {value}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -547,13 +638,13 @@ function BlDocumentCard({ doc, index, total, source, medicielProducts, onUpdate,
             </div>
             <div style={{ flex: 'none' }}>
               <label style={{ display: 'block', fontSize: 10, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--color-neutral-500)', marginBottom: 3 }}>
-                Total facture — saisi à la main
+                {totalIsRead ? 'Total facture — lu sur le BL' : 'Total facture — saisi à la main'}
               </label>
               <input
                 type="text"
                 inputMode="decimal"
                 value={invoiceTotal}
-                onChange={(e) => setInvoiceTotal(e.target.value)}
+                onChange={(e) => { setInvoiceTotal(e.target.value); setTotalIsRead(false) }}
                 placeholder="ex. 889,73"
                 className="num"
                 style={{
@@ -663,8 +754,12 @@ function BlDocumentCard({ doc, index, total, source, medicielProducts, onUpdate,
                   >
                     <div className="num" style={{ color: 'var(--color-neutral-500)' }}>{String(idx + 1).padStart(2, '0')}</div>
                     <div className="ell">{p.designation}</div>
-                    <div className="num ell" style={{ fontSize: 11, color: 'var(--color-neutral-400)' }}>
-                      {String(p.cip).startsWith('MANUAL') ? 'Saisie manuelle' : p.cip}
+                    <div
+                      className="num ell"
+                      style={{ fontSize: 11, color: 'var(--color-neutral-400)' }}
+                      title={p.cipUnverified ? "Clé de contrôle invalide : ce code est probablement mal lu — il ne sera pas mémorisé pour les prochains BL." : undefined}
+                    >
+                      {String(p.cip).startsWith('MANUAL') ? 'Saisie manuelle' : p.cip}{p.cipUnverified ? ' ?' : ''}
                     </div>
                     <div className="num" style={{ textAlign: 'right', color: 'var(--color-neutral-400)' }}>{p.qtyOrdered}</div>
                     <div style={{ textAlign: 'right' }}>
@@ -765,19 +860,21 @@ export default function Step1Import({ data, onUpdate, onNext }) {
     nextDocId.current = 2
   }, [onUpdate])
 
+  // Formes fonctionnelles (voir App.updateImportData) : un scan qui se termine
+  // 30 s plus tard ne doit pas écraser, avec la liste de documents qu'il avait
+  // en main au départ, un BL ajouté ou un n° de facture corrigé entre-temps.
   const updateDocument = useCallback((docId, patch) => {
-    onUpdate({ blDocuments: blDocuments.map((d) => (d.id === docId ? { ...d, ...patch } : d)) })
-  }, [blDocuments, onUpdate])
+    onUpdate((d) => ({ blDocuments: d.blDocuments.map((doc) => (doc.id === docId ? { ...doc, ...patch } : doc)) }))
+  }, [onUpdate])
 
   const handleAddDocument = useCallback(() => {
     const id = nextDocId.current++
-    onUpdate({ blDocuments: [...blDocuments, makeEmptyDocument(id)] })
-  }, [blDocuments, onUpdate])
+    onUpdate((d) => ({ blDocuments: [...d.blDocuments, makeEmptyDocument(id)] }))
+  }, [onUpdate])
 
   const handleRemoveDocument = useCallback((docId) => {
-    if (blDocuments.length <= 1) return
-    onUpdate({ blDocuments: blDocuments.filter((d) => d.id !== docId) })
-  }, [blDocuments, onUpdate])
+    onUpdate((d) => (d.blDocuments.length <= 1 ? {} : { blDocuments: d.blDocuments.filter((doc) => doc.id !== docId) }))
+  }, [onUpdate])
 
   const handleOrder = useCallback(async (file) => {
     if (!file) return
@@ -872,7 +969,11 @@ export default function Step1Import({ data, onUpdate, onNext }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             {blDocuments.map((doc, i) => (
               <BlDocumentCard
-                key={doc.id}
+                // La source dans la clé : changer de source repart de zéro, y
+                // compris l'état local de la carte (erreur périmée, lecture en
+                // cours qui atterrirait dans l'autre source) — les ids de
+                // document repartent à 1 à chaque changement de source.
+                key={`${source}-${doc.id}`}
                 doc={doc}
                 index={i}
                 total={blDocuments.length}

@@ -1,8 +1,19 @@
 import * as pdfjsLib from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
-import { isScannedPdf, ocrPdf, parseOcrText, PHARMACY_NAME_RE, PHARMACY_NAME_ALL_RE } from './ocrEngine.js'
+import { isScannedPdf, ocrPdf, ocrImages, parseOcrText, PHARMACY_NAME_RE, PHARMACY_NAME_ALL_RE } from './ocrEngine.js'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
+
+/**
+ * BL photographié : une image par page, dans l'ordre (remis dans l'ordre du
+ * "Page : N" imprimé quand il est lisible). Même analyse que le PDF scanné —
+ * seule la préparation de l'image change (voir ocrImages).
+ */
+export async function parseOfficineImages(files, onProgress) {
+  onProgress?.({ phase: 'ocr', message: `Préparation de ${files.length > 1 ? `${files.length} photos` : 'la photo'}…`, pct: 0 })
+  const ocrText = await ocrImages(files, onProgress)
+  return parseOcrText(ocrText)
+}
 
 export async function parseOfficinePdf(file, onProgress) {
   const scanned = await isScannedPdf(file)

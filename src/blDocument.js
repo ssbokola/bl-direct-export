@@ -3,5 +3,5 @@
  * BL" (Step1Import.jsx, handleAddDocument). Séparé de Step1Import.jsx : une
  * fonction utilitaire dans un fichier de composants casse le Fast Refresh. */
 export function makeEmptyDocument(id) {
-  return { id, pdfFile: null, blProducts: [], invoiceNumber: '', orderNumber: '', blNumber: '', supplierName: '' }
+  return { id, pdfFile: null, blProducts: [], invoiceNumber: '', orderNumber: '', blNumber: '', supplierName: '', printedTotalHt: null }
 }
